@@ -1,0 +1,90 @@
+version: '3.9'
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: terraflow-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - terraflow-net
+    restart: unless-stopped
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh --quiet
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: terraflow-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - LATITUDE=-33.45
+      - LONGITUDE=-70.66
+      - LOCATION_NAME=Predio Principal
+      - SIMULATE_SENSORS=true
+      - FROST_TEMP_THRESHOLD=8.0
+      - RAIN_SUSPENSION_THRESHOLD=5.0
+      - MONGO_URI=mongodb://mongo:27017
+      - MONGO_DB_NAME=terraflow
+      - WATCHDOG_TIMEOUT_SECONDS=90
+      - FAILSAFE_VALVE_STATE=closed
+    volumes:
+      - ./backend:/app
+    networks:
+      - terraflow-net
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: terraflow-frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - terraflow-net
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    container_name: terraflow-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - terraflow-net
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+
+networks:
+  terraflow-net:
+    driver: bridge
+
+volumes:
+  mongo_data:
