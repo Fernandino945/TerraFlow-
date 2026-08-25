@@ -14,6 +14,10 @@ _last_weather: dict = {}
 def set_weather_context(suspended: bool, reason: str = ""):
     global _last_weather
     _last_weather = {"suspended": suspended, "reason": reason}
+    if state.suspension_reason and state.suspension_reason.startswith("FAILSAFE"):
+        return
+
+
     state.irrigation_suspended = suspended
     state.suspension_reason = reason
 

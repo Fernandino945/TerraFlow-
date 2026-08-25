@@ -2,6 +2,8 @@ from fastapi import APIRouter
 from typing import List
 from app.core import state
 from app.models.schemas import SensorReading, SystemStatus
+from datetime import datetime
+from app.core import state
 
 router = APIRouter()
 
@@ -29,3 +31,9 @@ async def get_sensor_history(zone_id: str = None, limit: int = 100):
     if zone_id:
         history = [r for r in history if r.sensor_id == f"sensor_{zone_id}"]
     return history[-limit:]
+
+@router.post("/gateway/heartbeat")
+async def gateway_heartbeat():
+    """El Gateway loRaWAN llama esto periodicamente para confirmar que esta vivo."""
+    state.last_gateway_heartbeat = datetime.utcnow()
+    return {"status": "ok", "received_at": state.last_gateway_heartbeat}

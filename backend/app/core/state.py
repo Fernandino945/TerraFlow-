@@ -56,7 +56,7 @@ suspension_reason: str = ""
 
 # Último heartbeat del scheduler — usado por el watchdog para detectar caídas
 last_heartbeat: datetime = datetime.utcnow()
-
+last_gateway_heartbeat: datetime = datetime.utcnow()
 
 def generate_sensor_reading(zone_id: str, zone_name: str) -> SensorReading:
     """Simula lectura de sensor IoT."""
@@ -86,7 +86,7 @@ def generate_sensor_reading(zone_id: str, zone_name: str) -> SensorReading:
         status=status,
     )
 
-
+### last_heartbeat
 _pending_tasks: List = []
 
 

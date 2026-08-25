@@ -16,10 +16,14 @@ from app.models.schemas import ValveStatus, AlertLevel
 
 def check_watchdog():
     """Se ejecuta periódicamente. Si el heartbeat está vencido, aplica failsafe."""
-    elapsed = (datetime.utcnow() - state.last_heartbeat).total_seconds()
+    elapsed = (datetime.utcnow() - state.last_gateway_heartbeat).total_seconds()
 
     if elapsed > settings.WATCHDOG_TIMEOUT_SECONDS:
         _trigger_failsafe(elapsed)
+    elif state.suspension_reason and state.suspension_reason.startswith("FAILSAFE"):
+        state.irrigation_suspended = False
+        state.suspension_reason = "None"
+        state.add_alert(AlertLevel.INFO, "Heartbeat del Gateway restablecido. Failsafe desactivado.")
 
 
 def _trigger_failsafe(elapsed_seconds: float):
@@ -33,6 +37,8 @@ def _trigger_failsafe(elapsed_seconds: float):
             closed_any = True
 
     if closed_any:
+        state.irrigation_suspended = True
+        state.suspension_reason = f"FAILSAFE: sin heartbeat del Gateway por {elapsed_seconds:.0f}s"
         state.add_alert(
             AlertLevel.CRITICAL,
             f"FAILSAFE activado: sin heartbeat por {elapsed_seconds:.0f}s. "
