@@ -1,6 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from typing import List
 from app.core import state, database as db
+from app.core.phenology_profiles import PHENOLOGY_PROFILES
 from app.models.schemas import Alert, HumidityThresholds
 
 router = APIRouter()
@@ -24,6 +25,28 @@ async def get_thresholds():
 
 @router.put("/thresholds/{zone_id}", response_model=HumidityThresholds)
 async def update_thresholds(zone_id: str, thresholds: HumidityThresholds):
+    state.thresholds[zone_id] = thresholds
+    state.persist_threshold(thresholds)
+    return thresholds
+
+@router.get("/phenology-profiles")
+async def get_phenology_profiles():
+    return PHENOLOGY_PROFILES
+
+@router.post("/thresholds/{zone_id}/apply-profile", response_model=HumidityThresholds)
+async def apply_phenology(zone_id: str, crop_type: str, phase: str):
+    profile = PHENOLOGY_PROFILES.get(crop_type, {}).get(phase)
+    if not profile:
+        raise HTTPException(404, "Perfil no encontrado para ese cultivo/fase")
+    if zone_id not in state.thresholds:
+        raise HTTPException(404, "Zona no encontrada")
+    thresholds = HumidityThresholds(
+        zone_id=zone_id,
+        zone_name=state.thresholds[zone_id].zone_name,
+        crop_type=crop_type,
+        phenological_phase=phase,
+        **profile,
+    )
     state.thresholds[zone_id] = thresholds
     state.persist_threshold(thresholds)
     return thresholds

@@ -77,6 +77,7 @@ class HumidityThresholds(BaseModel):
     zone_id: str
     zone_name: str
     crop_type: str
+    phenological_phase: str | None = None
     critical_low: float = 25.0
     warning_low: float = 35.0
     warning_high: float = 75.0
