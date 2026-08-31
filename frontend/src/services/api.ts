@@ -74,11 +74,19 @@ export interface HumidityThresholds {
   zone_id: string
   zone_name: string
   crop_type: string
+  phenological_phase?: string
   critical_low: number
   warning_low: number
   warning_high: number
   critical_high: number
 }
+
+export type PhenologyProfiles = Record<string, Record<string, {
+  critical_low: number
+  warning_low: number
+  warning_high: number
+  critical_high: number
+}>>
 
 // API calls
 export const fetchSystemStatus = () => api.get<SystemStatus>('/sensors/status').then(r => r.data)
@@ -100,6 +108,14 @@ export const acknowledgeAlert = (alert_id: string) =>
 
 export const updateThresholds = (zone_id: string, data: HumidityThresholds) =>
   api.put<HumidityThresholds>(`/alerts/thresholds/${zone_id}`, data).then(r => r.data)
+
+export const fetchPhenologyProfiles = () =>
+  api.get<PhenologyProfiles>('/alerts/phenology-profiles').then(r => r.data)
+
+export const applyPhenologyProfile = (zone_id: string, crop_type: string, phase: string) =>
+  api.post<HumidityThresholds>(`/alerts/thresholds/${zone_id}/apply-profile`, null, {
+    params: { crop_type, phase },
+  }).then(r => r.data)
 
 export const refreshWeather = () =>
   api.post('/weather/refresh').then(r => r.data)
