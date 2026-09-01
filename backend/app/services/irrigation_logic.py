@@ -7,6 +7,7 @@ para no perder el estado ante una caída del backend.
 from datetime import datetime
 from app.core import state
 from app.models.schemas import ValveStatus, AlertLevel, TrafficLightStatus
+from app.core.config import settings
 
 _last_weather: dict = {}
 
@@ -58,12 +59,16 @@ def evaluate_auto_irrigation():
                 _close_valve(valve)
             continue
 
+        if reading.temperature < settings.SOIL_FROST_TEMP_THRESHOLD:
+           state.add_alert(AlertLevel.CRITICAL, f"Riesgo de helada en {reading.zone_name} ({reading.temperature}°C) — "f"Acción recomendada: evaluar riego manual o protección anti-helada", zone=reading.zone_name,
+    )
+
         # Lógica de lazo cerrado por humedad
         if reading.humidity < th.critical_low:
             if valve.status != ValveStatus.OPEN:
                 _open_valve(
                     valve,
-                    f"Humedad crítica ({reading.humidity}%) — riego activado automáticamente",
+                    f"Estrés hídrico en {reading.zone_name} ({reading.humidity}%) — Acción recomendada: evaluar riego manual",
                     AlertLevel.CRITICAL,
                     zone=reading.zone_name,
                 )

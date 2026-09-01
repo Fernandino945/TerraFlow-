@@ -12,13 +12,13 @@ import {
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { RefreshCw, Wifi, WifiOff } from 'lucide-react'
+import { CriticalAlertBanner } from '../components/dashboard/CriticalAlertBanner'
 
 export const Dashboard: React.FC = () => {
   const statusFetcher = useCallback(() => fetchSystemStatus(), [])
   const weatherFetcher = useCallback(() => fetchWeather(), [])
   const alertsFetcher = useCallback(() => fetchAlerts(), [])
   const historyFetcher = useCallback(() => fetchSensorHistory('zone_1', 60), [])
-
   const { data: status, loading: statusLoading, error: statusError, refetch: refetchStatus } = usePolling<SystemStatus>(statusFetcher, 10000)
   const { data: weather, loading: weatherLoading, refetch: refetchWeather } = usePolling<WeatherSummary>(weatherFetcher, 60000)
   const { data: alerts, refetch: refetchAlerts } = usePolling<Alert[]>(alertsFetcher, 15000)
@@ -77,6 +77,8 @@ export const Dashboard: React.FC = () => {
           </button>
         </div>
       </div>
+
+      <CriticalAlertBanner alerts={alerts || []} />
 
       {statusLoading && !status ? (
         <div className="flex items-center justify-center h-64">

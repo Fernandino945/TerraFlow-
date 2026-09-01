@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     HUMIDITY_WARNING_LOW: float = 35.0
     HUMIDITY_WARNING_HIGH: float = 75.0
     FROST_TEMP_THRESHOLD: float = 8.0
+    SOIL_FROST_TEMP_THRESHOLD: float = 1.5 
     RAIN_SUSPENSION_THRESHOLD: float = 5.0  # mm
 
     # Simulador de sensores
