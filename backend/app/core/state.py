@@ -8,6 +8,7 @@ al reiniciar, el estado se recupera desde MongoDB en vez de partir de cero.
 import random
 import uuid
 import asyncio
+import math
 from datetime import datetime, timedelta
 from typing import Dict, List
 from app.models.schemas import (
@@ -58,13 +59,31 @@ suspension_reason: str = ""
 last_heartbeat: datetime = datetime.utcnow()
 last_gateway_heartbeat: datetime = datetime.utcnow()
 
-def generate_sensor_reading(zone_id: str, zone_name: str) -> SensorReading:
-    """Simula lectura de sensor IoT."""
-    base_humidity = 55.0
-    base_temp = 18.0
+# Contador de ciclos del scheduler — usado por la simulación cíclica de sensores
+_tick: int = 0
 
-    humidity = max(10, min(95, base_humidity + random.gauss(0, 12)))
-    temperature = base_temp + random.gauss(0, 3)
+
+def generate_sensor_reading(zone_id: str, zone_name: str) -> SensorReading:
+    """
+    Simula lectura de sensor IoT con patrón cíclico (curva senoidal) en vez de
+    ruido puro. Esto genera alertas de forma predecible (~cada 10 min) para
+    poder validar el dashboard sin depender del azar.
+    """
+    # Desfase distinto por zona para que no todas alerten al mismo tiempo
+    zone_offset = {"zone_1": 0, "zone_2": 90, "zone_3": 180, "zone_4": 270}.get(zone_id, 0)
+
+    # Periodo de 10 minutos = 20 ciclos (scheduler corre cada 30s)
+    period_ticks = 20
+    phase = (_tick + zone_offset / 18) * (2 * math.pi / period_ticks)
+
+    # Humedad oscila entre ~20% y ~90% en 10 min, cruzando ambos umbrales críticos
+    humidity = 55 + 35 * math.sin(phase) + random.gauss(0, 2)
+    humidity = max(10, min(95, humidity))
+
+    # Temperatura oscila más lento (periodo de ~20 min) y ocasionalmente toca helada
+    temp_phase = (_tick + zone_offset / 18) * (2 * math.pi / (period_ticks * 2))
+    temperature = 15 + 14 * math.sin(temp_phase) + random.gauss(0, 0.5)
+    temperature = max(-2, min(38, temperature))
 
     th = thresholds.get(zone_id)
     if th:
@@ -113,8 +132,9 @@ async def wait_pending_writes():
 
 def refresh_all_sensors():
     """Refresca todas las lecturas de sensores (caché) y dispara guardado async en Mongo."""
-    global sensor_readings, last_heartbeat
+    global sensor_readings, last_heartbeat, _tick
     last_heartbeat = datetime.utcnow()
+    _tick += 1
 
     for z in ZONES:
         reading = generate_sensor_reading(z["id"], z["name"])
@@ -191,4 +211,3 @@ async def load_state_from_db():
 
 # Inicializar caché con datos frescos (antes de que cargue Mongo, para no bloquear el arranque)
 refresh_all_sensors()
-
