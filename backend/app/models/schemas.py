@@ -91,3 +91,10 @@ class MonthlyReport(BaseModel):
     avg_humidity: float
     alerts_count: int
     zones_data: dict
+
+class BrixReading(BaseModel):
+    zone_id: str
+    zone_name: str
+    brix_value: float
+    measured_by: str = "Manual"
+    timestamp: datetime = None
