@@ -4,6 +4,9 @@ from app.api import sensors, valves, weather, reports, alerts, location, databas
 from app.core.config import settings
 from app.core.scheduler import start_scheduler
 from app.core import database as db, state
+from app.api import analytics
+
+app.include_router(analytics.router, prefix="/api/analytics", tags=["Análisis"])
 
 app = FastAPI(
     title="TerraFlow API",

@@ -164,3 +164,11 @@ async def get_collection_documents(name: str, page: int = 1, page_size: int = 20
         d["_id"] = str(d["_id"])
 
     return {"documents": docs, "total": total, "page": page, "page_size": page_size}
+
+async def save_brix_reading(data: dict):
+    data["timestamp"] = datetime.utcnow()
+    await db.brix_readings.insert_one(data)
+
+async def get_latest_brix(zone_id: str):
+    doc = await db.brix_readings.find_one({"zone_id": zone_id}, sort=[("timestamp", -1)])
+    return doc
