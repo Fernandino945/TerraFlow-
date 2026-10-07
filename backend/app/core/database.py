@@ -139,31 +139,76 @@ async def list_collections_with_counts():
         result.append({"name": name, "count": count})
     return result
 
-async def get_collection_documents(name: str, page: int = 1, page_size: int = 20):
+async def list_sensor_summaries():
+    """
+    Resumen por sensor de sensor_history: cantidad de lecturas y fecha de la última.
+    Alimenta los filtros por sensor del explorador de base de datos.
+    """
+    pipeline = [
+        {"$group": {
+            "_id": "$sensor_id",
+            "zone_name": {"$first": "$zone_name"},
+            "count": {"$sum": 1},
+            "last_timestamp": {"$max": "$timestamp"},
+        }},
+        {"$sort": {"_id": 1}},
+    ]
+    docs = await sensor_history_collection().aggregate(pipeline, allowDiskUse=True).to_list(length=200)
+    return [
+        {
+            "sensor_id": d["_id"],
+            "zone_name": d.get("zone_name"),
+            "count": d["count"],
+            "last_timestamp": d.get("last_timestamp"),
+        }
+        for d in docs
+        if d["_id"]
+    ]
+
+async def get_collection_documents(
+    name: str, page: int = 1, page_size: int = 20, sensor_id: Optional[str] = None
+):
     """
     Pagina los documentos de una colección, ordenados por el campo más reciente
     disponible (timestamp / last_changed) si existe, o por _id si no.
+    Si name == 'sensor_history' y se indica sensor_id, solo devuelve las lecturas de ese sensor.
     """
     if name not in KNOWN_COLLECTIONS:
         return {"documents": [], "total": 0}
 
     collection = db[name]
-    total = await collection.count_documents({})
+
+    query = {}
+    if sensor_id and name == "sensor_history":
+        query["sensor_id"] = sensor_id
+
+    total = await collection.count_documents(query)
 
     sort_field = "timestamp"
     sample = await collection.find_one({})
     if sample and "timestamp" not in sample:
         sort_field = "last_changed" if "last_changed" in (sample or {}) else "_id"
 
+    # Desempate por _id para que la paginación sea estable (las 4 zonas comparten timestamp)
+    sort_spec = [(sort_field, -1)]
+    if sort_field != "_id":
+        sort_spec.append(("_id", -1))
+
     skip = (page - 1) * page_size
-    cursor = collection.find({}).sort(sort_field, -1).skip(skip).limit(page_size)
+    cursor = collection.find(query).sort(sort_spec).skip(skip).limit(page_size)
     docs = await cursor.to_list(length=page_size)
 
     # _id puede ser ObjectId o string; lo normalizamos a string para JSON
     for d in docs:
         d["_id"] = str(d["_id"])
 
-    return {"documents": docs, "total": total, "page": page, "page_size": page_size}
+    return {
+        "documents": docs,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "sensor_id": query.get("sensor_id"),
+    }
 
 async def save_brix_reading(data: dict):
     data["timestamp"] = datetime.utcnow()

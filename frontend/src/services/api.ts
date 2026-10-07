@@ -148,8 +148,18 @@ export interface CollectionPage {
   page_size: number
 }
 
+export interface SensorSummary {
+  sensor_id: string
+  zone_name?: string
+  count: number
+  last_timestamp?: string
+}
+
 export const fetchCollections = () => api.get<CollectionInfo[]>('/database/collections').then(r => r.data)
-export const fetchCollectionDocs = (name: string, page = 1, pageSize = 20) =>
-  api.get<CollectionPage>(`/database/collections/${name}?page=${page}&page_size=${pageSize}`).then(r => r.data)
+export const fetchSensorSummaries = () => api.get<SensorSummary[]>('/database/sensors').then(r => r.data)
+export const fetchCollectionDocs = (name: string, page = 1, pageSize = 20, sensorId?: string) =>
+  api.get<CollectionPage>(`/database/collections/${name}`, {
+    params: { page, page_size: pageSize, ...(sensorId ? { sensor_id: sensorId } : {}) },
+  }).then(r => r.data)
 
 export default api

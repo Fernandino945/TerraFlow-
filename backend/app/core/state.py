@@ -62,6 +62,9 @@ last_gateway_heartbeat: datetime = datetime.utcnow()
 # Contador de ciclos del scheduler — usado por la simulación cíclica de sensores
 _tick: int = 0
 
+# Última lectura real recibida por zona (si es reciente, el simulador no pisa esa zona)
+real_last_seen: Dict[str, datetime] = {}
+REAL_NODE_TIMEOUT_SECONDS = 90
 
 def generate_sensor_reading(zone_id: str, zone_name: str) -> SensorReading:
     """
@@ -137,6 +140,9 @@ def refresh_all_sensors():
     _tick += 1
 
     for z in ZONES:
+        seen = real_last_seen.get(z["id"])
+        if seen and (datetime.utcnow() - seen).total_seconds() < REAL_NODE_TIMEOUT_SECONDS:
+            continue  # zona con nodo real activo: no se simula
         reading = generate_sensor_reading(z["id"], z["name"])
         sensor_readings[z["id"]] = reading
         reading_history.append(reading)
@@ -145,6 +151,29 @@ def refresh_all_sensors():
     if len(reading_history) > 1440 * len(ZONES):
         del reading_history[:len(ZONES)]
 
+def ingest_real_reading(zone_id: str, humidity: float, temperature: float) -> SensorReading:
+    """Guarda una lectura real (ESP32) en caché, historial y Mongo."""
+    zone = next(z for z in ZONES if z["id"] == zone_id)
+    th = thresholds.get(zone_id)
+    status = TrafficLightStatus.GREEN
+    if th:
+        if humidity <= th.critical_low or humidity >= th.critical_high:
+            status = TrafficLightStatus.RED
+        elif humidity <= th.warning_low or humidity >= th.warning_high:
+            status = TrafficLightStatus.YELLOW
+    reading = SensorReading(
+        sensor_id=f"sensor_{zone_id}",
+        zone_name=zone["name"],
+        humidity=round(humidity, 1),
+        temperature=round(temperature, 1),
+        timestamp=datetime.utcnow(),
+        status=status,
+    )
+    sensor_readings[zone_id] = reading
+    reading_history.append(reading)
+    real_last_seen[zone_id] = datetime.utcnow()
+    _safe_create_task(db.save_sensor_reading(reading.model_dump()))
+    return reading
 
 def get_overall_status() -> TrafficLightStatus:
     statuses = [r.status for r in sensor_readings.values()]
