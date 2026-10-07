@@ -1,7 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from typing import List
 from app.core import state
-from app.models.schemas import SensorReading, SystemStatus
+from app.models.schemas import SensorReading, SystemStatus, SensorIngest
 from datetime import datetime
 from app.core import state
 
@@ -37,3 +37,21 @@ async def gateway_heartbeat():
     """El Gateway loRaWAN llama esto periodicamente para confirmar que esta vivo."""
     state.last_gateway_heartbeat = datetime.utcnow()
     return {"status": "ok", "received_at": state.last_gateway_heartbeat}
+
+
+
+@router.post("/ingest")
+async def ingest_sensor(payload: SensorIngest):
+    """Recibe lecturas reales del nodo ESP32 (Wokwi o hardware físico)."""
+    zone_id = payload.sensor_id.removeprefix("sensor_")
+    if zone_id not in {z["id"] for z in state.ZONES}:
+        raise HTTPException(status_code=404, detail=f"sensor_id '{payload.sensor_id}' no registrado")
+    reading = state.ingest_real_reading(zone_id, payload.humidity, payload.temperature)
+    state.last_gateway_heartbeat = datetime.utcnow()  # PROVISORIO hasta HU-21
+    return {
+        "status": "ok",
+        "sensor_id": reading.sensor_id,
+        "humidity": reading.humidity,
+        "temperature": reading.temperature,
+        "received_at": reading.timestamp,
+    }

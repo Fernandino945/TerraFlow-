@@ -4,7 +4,10 @@ import {
   ChevronLeft, ChevronRight, RefreshCw, FileJson
 } from 'lucide-react'
 import { usePolling } from '../hooks/usePolling'
-import { fetchCollections, fetchCollectionDocs, CollectionInfo, CollectionPage } from '../services/api'
+import {
+  fetchCollections, fetchCollectionDocs, fetchSensorSummaries,
+  CollectionInfo, CollectionPage, SensorSummary,
+} from '../services/api'
 
 const collectionMeta: Record<string, { icon: React.ReactNode; label: string; color: string }> = {
   sensor_history: { icon: <Droplets size={16} />, label: 'Historial de Sensores', color: '#38bdf8' },
@@ -18,18 +21,34 @@ const collectionMeta: Record<string, { icon: React.ReactNode; label: string; col
 export const DatabaseExplorer: React.FC = () => {
   const [selected, setSelected] = useState<string>('sensor_history')
   const [page, setPage] = useState(1)
+  const [sensorFilter, setSensorFilter] = useState<string | null>(null) // null = todos los sensores
   const pageSize = 15
+
+  const isSensorHistory = selected === 'sensor_history'
+  const activeSensor = isSensorHistory ? sensorFilter : null
 
   const collectionsFetcher = useCallback(() => fetchCollections(), [])
   const { data: collections, loading: collectionsLoading, refetch: refetchCollections } =
     usePolling<CollectionInfo[]>(collectionsFetcher, 20000)
 
-  const docsFetcher = useCallback(() => fetchCollectionDocs(selected, page, pageSize), [selected, page])
+  const sensorsFetcher = useCallback(() => fetchSensorSummaries(), [])
+  const { data: sensors, refetch: refetchSensors } =
+    usePolling<SensorSummary[]>(sensorsFetcher, 15000)
+
+  const docsFetcher = useCallback(
+    () => fetchCollectionDocs(selected, page, pageSize, activeSensor ?? undefined),
+    [selected, page, activeSensor]
+  )
   const { data: docsPage, loading: docsLoading, refetch: refetchDocs } =
     usePolling<CollectionPage>(docsFetcher, 15000)
 
   const handleSelect = (name: string) => {
     setSelected(name)
+    setPage(1)
+  }
+
+  const handleSensorFilter = (sensorId: string | null) => {
+    setSensorFilter(sensorId)
     setPage(1)
   }
 
@@ -48,7 +67,7 @@ export const DatabaseExplorer: React.FC = () => {
           </div>
         </div>
         <button
-          onClick={() => { refetchCollections(); refetchDocs() }}
+          onClick={() => { refetchCollections(); refetchSensors(); refetchDocs() }}
           className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm"
           style={{ background: '#1e2a18', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
         >
@@ -105,15 +124,26 @@ export const DatabaseExplorer: React.FC = () => {
                 {collectionMeta[selected]?.label || selected}
               </span>
               <code className="mono text-xs px-2 py-0.5 rounded" style={{ background: '#1e2a18', color: 'var(--text-muted)' }}>
-                db.{selected}.find()
+                {activeSensor
+                  ? `db.${selected}.find({ sensor_id: "${activeSensor}" })`
+                  : `db.${selected}.find()`}
               </code>
             </div>
             {docsPage && (
               <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                {docsPage.total} documento{docsPage.total !== 1 ? 's' : ''} en total
+                {docsPage.total} documento{docsPage.total !== 1 ? 's' : ''} {activeSensor ? 'de este sensor' : 'en total'}
               </span>
             )}
           </div>
+
+          {isSensorHistory && (
+            <SensorFilter
+              sensors={sensors ?? []}
+              value={sensorFilter}
+              onChange={handleSensorFilter}
+              color={collectionMeta.sensor_history.color}
+            />
+          )}
 
           {docsLoading && !docsPage ? (
             <div className="flex items-center justify-center py-16">
@@ -122,7 +152,11 @@ export const DatabaseExplorer: React.FC = () => {
           ) : !docsPage || docsPage.documents.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 gap-2" style={{ color: 'var(--text-muted)' }}>
               <FileJson size={28} className="opacity-30" />
-              <span className="text-sm">Sin documentos guardados aún en esta colección</span>
+              <span className="text-sm">
+                {activeSensor
+                  ? 'Sin lecturas guardadas para este sensor'
+                  : 'Sin documentos guardados aún en esta colección'}
+              </span>
             </div>
           ) : (
             <>
@@ -161,13 +195,79 @@ export const DatabaseExplorer: React.FC = () => {
 }
 
 /**
+ * Filtro por sensor para la colección sensor_history.
+ * "Todos" + un botón por cada sensor_id presente en la base de datos.
+ */
+const SensorFilter: React.FC<{
+  sensors: SensorSummary[]
+  value: string | null
+  onChange: (sensorId: string | null) => void
+  color: string
+}> = ({ sensors, value, onChange, color }) => {
+  const total = sensors.reduce((sum, s) => sum + s.count, 0)
+
+  const chip = (
+    key: string,
+    active: boolean,
+    onClick: () => void,
+    label: string,
+    sub: string | undefined,
+    count: number,
+    title?: string
+  ) => (
+    <button
+      key={key}
+      onClick={onClick}
+      title={title}
+      className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-all"
+      style={{
+        background: active ? `${color}18` : 'transparent',
+        border: `1px solid ${active ? `${color}60` : 'var(--border)'}`,
+        color: active ? color : 'var(--text-muted)',
+      }}
+    >
+      <span className="text-left">
+        <span className="block font-medium">{label}</span>
+        {sub && <span className="block mono" style={{ fontSize: 10, opacity: 0.7 }}>{sub}</span>}
+      </span>
+      <span
+        className="mono px-1.5 py-0.5 rounded-full"
+        style={{ background: active ? `${color}25` : '#1e2a18', fontSize: 10 }}
+      >
+        {count}
+      </span>
+    </button>
+  )
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-xs font-semibold mr-1" style={{ color: 'var(--text-muted)' }}>
+        SENSOR
+      </span>
+      {chip('all', value === null, () => onChange(null), 'Todos', undefined, total)}
+      {sensors.map(s =>
+        chip(
+          s.sensor_id,
+          value === s.sensor_id,
+          () => onChange(s.sensor_id),
+          s.zone_name || s.sensor_id,
+          s.sensor_id,
+          s.count,
+          s.last_timestamp ? `Última lectura: ${s.last_timestamp.replace('T', ' ').slice(0, 19)}` : undefined
+        )
+      )}
+    </div>
+  )
+}
+
+/**
  * Tabla genérica que renderiza cualquier documento de Mongo,
  * con columnas inferidas automáticamente desde las claves del primer documento.
  */
 const DocumentTable: React.FC<{ documents: Record<string, any>[] }> = ({ documents }) => {
   // Unión de todas las claves presentes (por si algún doc tiene campos distintos)
   const columns = Array.from(
-    documents.reduce((set, doc) => {
+    documents.reduce<Set<string>>((set, doc) => {
       Object.keys(doc).forEach(k => set.add(k))
       return set
     }, new Set<string>())

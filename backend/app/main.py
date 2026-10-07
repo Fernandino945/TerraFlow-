@@ -6,8 +6,6 @@ from app.core.scheduler import start_scheduler
 from app.core import database as db, state
 from app.api import analytics
 
-app.include_router(analytics.router, prefix="/api/analytics", tags=["Análisis"])
-
 app = FastAPI(
     title="TerraFlow API",
     description="Plataforma IoT de lazo cerrado para automatización de riego agrícola",
@@ -29,6 +27,7 @@ app.include_router(reports.router, prefix="/api/reports", tags=["Reportes"])
 app.include_router(alerts.router, prefix="/api/alerts", tags=["Alertas"])
 app.include_router(location.router, prefix="/api/location", tags=["Ubicación"])
 app.include_router(database_api.router, prefix="/api/database", tags=["Base de Datos"])
+app.include_router(analytics.router, prefix="/api/analytics", tags=["Análisis"])
 
 @app.on_event("startup")
 async def startup_event():
