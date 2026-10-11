@@ -14,6 +14,12 @@ class Settings(BaseSettings):
     FROST_TEMP_THRESHOLD: float = 8.0
     SOIL_FROST_TEMP_THRESHOLD: float = 1.5 
     RAIN_SUSPENSION_THRESHOLD: float = 5.0  # mm
+ 
+    # Rango físico plausible para lecturas reales (HU-22): fuera de esto se descarta
+    SENSOR_HUMIDITY_MIN: float = 0.0
+    SENSOR_HUMIDITY_MAX: float = 100.0
+    SENSOR_TEMP_MIN: float = -20.0
+    SENSOR_TEMP_MAX: float = 60.0
 
     # Simulador de sensores
     SIMULATE_SENSORS: bool = True

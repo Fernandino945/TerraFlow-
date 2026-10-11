@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from typing import List
 from app.core import state
 from app.models.schemas import SensorReading, SystemStatus, SensorIngest
+from app.services import sensor_validation
 from datetime import datetime
 from app.core import state
 
@@ -46,8 +47,16 @@ async def ingest_sensor(payload: SensorIngest):
     zone_id = payload.sensor_id.removeprefix("sensor_")
     if zone_id not in {z["id"] for z in state.ZONES}:
         raise HTTPException(status_code=404, detail=f"sensor_id '{payload.sensor_id}' no registrado")
-    reading = state.ingest_real_reading(zone_id, payload.humidity, payload.temperature)
+
+    # El nodo está vivo aunque su lectura sea inválida: cuenta como heartbeat
     state.last_gateway_heartbeat = datetime.utcnow()  # PROVISORIO hasta HU-21
+
+    # HU-22: validar rango e integridad ANTES de guardar nada
+    reason = sensor_validation.check_reading(payload.sensor_id, payload.humidity, payload.temperature)
+    if reason:
+        raise HTTPException(status_code=422, detail={"status": "discarded", "reason": reason})
+
+    reading = state.ingest_real_reading(zone_id, payload.humidity, payload.temperature)
     return {
         "status": "ok",
         "sensor_id": reading.sensor_id,

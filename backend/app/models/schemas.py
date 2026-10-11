@@ -29,8 +29,8 @@ class SensorReading(BaseModel):
 class SensorIngest(BaseModel):
     """Payload enviado por el nodo ESP32 (Wokwi o hardware físico)."""
     sensor_id: str = Field(..., description="Ej: sensor_zone_1")
-    humidity: float = Field(..., ge=0, le=100, description="Humedad del suelo (%)")
-    temperature: float = Field(..., ge=-55, le=125, description="Temperatura DS18B20 (°C)")
+    humidity: float = Field(..., description="Humedad del suelo (%)")
+    temperature: float = Field(..., description="Temperatura DS18B20 (°C)")
     raw_adc: Optional[int] = None
     rssi: Optional[int] = None
     uptime_s: Optional[int] = None
