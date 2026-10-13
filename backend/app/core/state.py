@@ -66,6 +66,18 @@ _tick: int = 0
 real_last_seen: Dict[str, datetime] = {}
 REAL_NODE_TIMEOUT_SECONDS = 90
 
+def compute_status(zone_id: str, humidity: float) -> TrafficLightStatus:
+    """Semáforo según umbrales de la zona. Única fuente de verdad para simulador y ESP32."""
+    th = thresholds.get(zone_id)
+    if not th:
+        return TrafficLightStatus.GREEN
+    if humidity <= th.critical_low or humidity >= th.critical_high:
+        return TrafficLightStatus.RED
+    if humidity <= th.warning_low or humidity >= th.warning_high:
+        return TrafficLightStatus.YELLOW
+    return TrafficLightStatus.GREEN
+
+
 def generate_sensor_reading(zone_id: str, zone_name: str) -> SensorReading:
     """
     Simula lectura de sensor IoT con patrón cíclico (curva senoidal) en vez de
@@ -88,16 +100,7 @@ def generate_sensor_reading(zone_id: str, zone_name: str) -> SensorReading:
     temperature = 15 + 14 * math.sin(temp_phase) + random.gauss(0, 0.5)
     temperature = max(-2, min(38, temperature))
 
-    th = thresholds.get(zone_id)
-    if th:
-        if humidity <= th.critical_low or humidity >= th.critical_high:
-            status = TrafficLightStatus.RED
-        elif humidity <= th.warning_low or humidity >= th.warning_high:
-            status = TrafficLightStatus.YELLOW
-        else:
-            status = TrafficLightStatus.GREEN
-    else:
-        status = TrafficLightStatus.GREEN
+    status = compute_status(zone_id, humidity)
 
     return SensorReading(
         sensor_id=f"sensor_{zone_id}",
@@ -106,6 +109,7 @@ def generate_sensor_reading(zone_id: str, zone_name: str) -> SensorReading:
         temperature=round(temperature, 1),
         timestamp=datetime.utcnow(),
         status=status,
+        source="simulator",
     )
 
 ### last_heartbeat
@@ -139,6 +143,9 @@ def refresh_all_sensors():
     last_heartbeat = datetime.utcnow()
     _tick += 1
 
+    if not settings.SIMULATE_SENSORS:
+        return  # modo dato real: el origen de las lecturas es solo el ESP32 (POST /ingest)
+
     for z in ZONES:
         seen = real_last_seen.get(z["id"])
         if seen and (datetime.utcnow() - seen).total_seconds() < REAL_NODE_TIMEOUT_SECONDS:
@@ -154,13 +161,7 @@ def refresh_all_sensors():
 def ingest_real_reading(zone_id: str, humidity: float, temperature: float) -> SensorReading:
     """Guarda una lectura real (ESP32) en caché, historial y Mongo."""
     zone = next(z for z in ZONES if z["id"] == zone_id)
-    th = thresholds.get(zone_id)
-    status = TrafficLightStatus.GREEN
-    if th:
-        if humidity <= th.critical_low or humidity >= th.critical_high:
-            status = TrafficLightStatus.RED
-        elif humidity <= th.warning_low or humidity >= th.warning_high:
-            status = TrafficLightStatus.YELLOW
+    status = compute_status(zone_id, humidity)
     reading = SensorReading(
         sensor_id=f"sensor_{zone_id}",
         zone_name=zone["name"],
@@ -168,6 +169,7 @@ def ingest_real_reading(zone_id: str, humidity: float, temperature: float) -> Se
         temperature=round(temperature, 1),
         timestamp=datetime.utcnow(),
         status=status,
+        source="esp32",
     )
     sensor_readings[zone_id] = reading
     reading_history.append(reading)

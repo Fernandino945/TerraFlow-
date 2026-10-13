@@ -12,6 +12,7 @@ export interface SensorReading {
   temperature: number
   timestamp: string
   status: 'green' | 'yellow' | 'red'
+  source: 'simulator' | 'esp32'
 }
 
 export interface ValveState {

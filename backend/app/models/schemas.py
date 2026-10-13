@@ -25,6 +25,7 @@ class SensorReading(BaseModel):
     temperature: float = Field(..., description="Temperatura ambiente (°C)")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     status: TrafficLightStatus = TrafficLightStatus.GREEN
+    source: str = Field(default="simulator", description="Origen del dato: simulator | esp32")
 
 class SensorIngest(BaseModel):
     """Payload enviado por el nodo ESP32 (Wokwi o hardware físico)."""
