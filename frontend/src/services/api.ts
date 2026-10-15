@@ -12,7 +12,7 @@ export interface SensorReading {
   temperature: number
   timestamp: string
   status: 'green' | 'yellow' | 'red'
-  source: 'simulator' | 'esp32'
+  source?: 'simulator' | 'esp32'
 }
 
 export interface ValveState {
@@ -155,6 +155,31 @@ export interface SensorSummary {
   count: number
   last_timestamp?: string
 }
+
+export interface NodeStatus {
+  zone_id: string
+  zone_name: string
+  sensor_id: string
+  node_status: 'online' | 'no_report' | 'never'
+  threshold_seconds: number
+  last_seen: string | null
+  seconds_since: number | null
+  last_reading: {
+    humidity: number
+    temperature: number
+    timestamp: string
+    status: 'green' | 'yellow' | 'red' | null
+  } | null
+  current_source: 'simulator' | 'esp32' | null
+  rssi: number | null
+  uptime_s: number | null
+  raw_adc: number | null
+  discarded_total: number
+  last_discard_reason: string | null
+  last_discard_at: string | null
+}
+
+export const fetchNodeStatus = () => api.get<NodeStatus[]>('/sensors/node-status').then(r => r.data)
 
 export const fetchCollections = () => api.get<CollectionInfo[]>('/database/collections').then(r => r.data)
 export const fetchSensorSummaries = () => api.get<SensorSummary[]>('/database/sensors').then(r => r.data)
