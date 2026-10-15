@@ -1,12 +1,20 @@
+from datetime import datetime, timezone
+from typing import Dict, List, Optional
+
 from fastapi import APIRouter, HTTPException
-from typing import List
+
+from app.core import database as db
 from app.core import state
+from app.core.config import settings
 from app.models.schemas import SensorReading, SystemStatus, SensorIngest
 from app.services import sensor_validation
-from datetime import datetime
-from app.core import state
 
 router = APIRouter()
+
+# HU-23: diagnóstico por zona del último contacto del nodo ESP32 (se llena en /ingest).
+# Vive en memoria; la última lectura real se recupera de Mongo si el backend se reinicia.
+_node_diag: Dict[str, dict] = {}
+
 
 @router.get("/", response_model=List[SensorReading])
 async def get_all_sensors():
@@ -40,7 +48,6 @@ async def gateway_heartbeat():
     return {"status": "ok", "received_at": state.last_gateway_heartbeat}
 
 
-
 @router.post("/ingest")
 async def ingest_sensor(payload: SensorIngest):
     """Recibe lecturas reales del nodo ESP32 (Wokwi o hardware físico)."""
@@ -49,11 +56,19 @@ async def ingest_sensor(payload: SensorIngest):
         raise HTTPException(status_code=404, detail=f"sensor_id '{payload.sensor_id}' no registrado")
 
     # El nodo está vivo aunque su lectura sea inválida: cuenta como heartbeat
-    state.last_gateway_heartbeat = datetime.utcnow()  # PROVISORIO hasta HU-21
+    now = datetime.utcnow()
+    state.last_gateway_heartbeat = now  # PROVISORIO hasta HU-21
+
+    # HU-23: registrar el contacto del nodo para el diagnóstico
+    diag = _node_diag.setdefault(zone_id, {"discarded_total": 0})
+    diag.update(last_contact=now, rssi=payload.rssi, uptime_s=payload.uptime_s, raw_adc=payload.raw_adc)
 
     # HU-22: validar rango e integridad ANTES de guardar nada
     reason = sensor_validation.check_reading(payload.sensor_id, payload.humidity, payload.temperature)
     if reason:
+        diag["discarded_total"] += 1
+        diag["last_discard_reason"] = reason
+        diag["last_discard_at"] = now
         raise HTTPException(status_code=422, detail={"status": "discarded", "reason": reason})
 
     reading = state.ingest_real_reading(zone_id, payload.humidity, payload.temperature)
@@ -64,3 +79,88 @@ async def ingest_sensor(payload: SensorIngest):
         "temperature": reading.temperature,
         "received_at": reading.timestamp,
     }
+
+
+def _naive_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is not None:
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
+
+def _iso(dt: Optional[datetime]) -> Optional[str]:
+    """ISO 8601 en UTC con 'Z' para que el navegador lo convierta bien a hora local."""
+    return _naive_utc(dt).isoformat() + "Z" if dt else None
+
+
+async def _last_real_reading(zone_id: str, sensor_id: str) -> Optional[dict]:
+    """Última lectura enviada por el ESP32 (caché en memoria o, si no, Mongo)."""
+    candidates = []
+    cached = state.sensor_readings.get(zone_id)
+    if cached and cached.source == "esp32":
+        candidates.append({
+            "humidity": cached.humidity,
+            "temperature": cached.temperature,
+            "timestamp": _naive_utc(cached.timestamp),
+            "status": getattr(cached.status, "value", cached.status),
+        })
+    try:
+        doc = await db.sensor_history_collection().find_one(
+            {"sensor_id": sensor_id, "source": "esp32"}, sort=[("timestamp", -1)]
+        )
+        if doc:
+            candidates.append({
+                "humidity": doc["humidity"],
+                "temperature": doc["temperature"],
+                "timestamp": _naive_utc(doc["timestamp"]),
+                "status": doc.get("status"),
+            })
+    except Exception:
+        pass  # sin Mongo: nos quedamos con la caché
+    return max(candidates, key=lambda r: r["timestamp"], default=None)
+
+
+@router.get("/node-status")
+async def get_node_status():
+    """
+    HU-23: diagnóstico de conexión de cada nodo ESP32.
+    node_status: "online" (reportó dentro del umbral), "no_report" (superó el umbral
+    de heartbeat) o "never" (la zona no tiene nodo real: la alimenta el simulador).
+    """
+    now = datetime.utcnow()
+    threshold = settings.WATCHDOG_TIMEOUT_SECONDS
+    nodes = []
+
+    for z in state.ZONES:
+        zone_id = z["id"]
+        sensor_id = f"sensor_{zone_id}"
+        diag = _node_diag.get(zone_id, {})
+        last_reading = await _last_real_reading(zone_id, sensor_id)
+
+        seen = [t for t in (diag.get("last_contact"), last_reading and last_reading["timestamp"]) if t]
+        last_seen = max(seen) if seen else None
+
+        if last_seen is None:
+            node_status, seconds_since = "never", None
+        else:
+            seconds_since = max(0, int((now - last_seen).total_seconds()))
+            node_status = "online" if seconds_since <= threshold else "no_report"
+
+        current = state.sensor_readings.get(zone_id)
+        nodes.append({
+            "zone_id": zone_id,
+            "zone_name": z["name"],
+            "sensor_id": sensor_id,
+            "node_status": node_status,
+            "threshold_seconds": threshold,
+            "last_seen": _iso(last_seen),
+            "seconds_since": seconds_since,
+            "last_reading": last_reading and {**last_reading, "timestamp": _iso(last_reading["timestamp"])},
+            "current_source": current.source if current else None,
+            "rssi": diag.get("rssi"),
+            "uptime_s": diag.get("uptime_s"),
+            "raw_adc": diag.get("raw_adc"),
+            "discarded_total": diag.get("discarded_total", 0),
+            "last_discard_reason": diag.get("last_discard_reason"),
+            "last_discard_at": _iso(diag.get("last_discard_at")),
+        })
+    return nodes

@@ -1,13 +1,14 @@
 import React, { useCallback } from 'react'
 import { TrafficLightBig } from '../components/dashboard/TrafficLight'
 import { ZoneCard } from '../components/dashboard/ZoneCard'
+import { NodeStatusPanel } from '../components/dashboard/NodeStatusPanel'
 import { WeatherPanel } from '../components/dashboard/WeatherPanel'
 import { AlertsPanel } from '../components/alerts/AlertsPanel'
 import { HumidityChart } from '../components/charts/HumidityChart'
 import { usePolling } from '../hooks/usePolling'
 import {
-  fetchSystemStatus, fetchWeather, fetchAlerts, fetchSensorHistory,
-  commandValve, setValveAutoMode, SystemStatus, WeatherSummary, Alert
+  fetchSystemStatus, fetchWeather, fetchAlerts, fetchSensorHistory, fetchNodeStatus,
+  commandValve, setValveAutoMode, SystemStatus, WeatherSummary, Alert, NodeStatus
 } from '../services/api'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -19,10 +20,12 @@ export const Dashboard: React.FC = () => {
   const weatherFetcher = useCallback(() => fetchWeather(), [])
   const alertsFetcher = useCallback(() => fetchAlerts(), [])
   const historyFetcher = useCallback(() => fetchSensorHistory('zone_1', 60), [])
+  const nodesFetcher = useCallback(() => fetchNodeStatus(), [])
   const { data: status, loading: statusLoading, error: statusError, refetch: refetchStatus } = usePolling<SystemStatus>(statusFetcher, 10000)
   const { data: weather, loading: weatherLoading, refetch: refetchWeather } = usePolling<WeatherSummary>(weatherFetcher, 60000)
   const { data: alerts, refetch: refetchAlerts } = usePolling<Alert[]>(alertsFetcher, 15000)
   const { data: history } = usePolling(historyFetcher, 30000)
+  const { data: nodes } = usePolling<NodeStatus[]>(nodesFetcher, 10000)
 
   const handleToggleValve = async (valve_id: string, action: 'open' | 'close') => {
     try {
@@ -128,6 +131,13 @@ export const Dashboard: React.FC = () => {
               />
             )
           })}
+
+          {/* Diagnóstico de nodos ESP32 (HU-23) */}
+          {nodes && (
+            <div className="col-span-3">
+              <NodeStatusPanel nodes={nodes} />
+            </div>
+          )}
 
           {/* Humidity history chart */}
           {history && (
