@@ -1,105 +1,148 @@
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
-//raw_adc
-// ====== CONFIGURACIÓN ======
-const char* WIFI_SSID    = "Wokwi-GUEST";
-const char* WIFI_PASS    = "";
-const int   WIFI_CHANNEL = 6;
-const char* INGEST_URL   = "http://remembered-shield-hepatitis-industrial.trycloudflare.com/api/sensors/ingest";
-const char* SENSOR_ID    = "sensor_zone_1";
+// --- TUS CREDENCIALES DE WI-FI ---
+const char* ssid = "Yak-3";
+const char* password = "sbgs8189";
 
-const int PIN_SOIL = 34;   // ADC1. En el Heltec V3 se cambia en HU-19
-const int PIN_DS18 = 4;
-
-// Calibración capacitivo: más raw = más seco
-const int RAW_DRY = 4095;  // aire  -> 0 %
-const int RAW_WET = 0;     // agua  -> 100 %
-
-const unsigned long SEND_INTERVAL_MS = 30000;  // igual al ciclo del scheduler (30 s)
-
-OneWire oneWire(PIN_DS18);
-DallasTemperature ds18(&oneWire);
+// --- BACKEND (URL del túnel Cloudflare, con la ruta completa) ---
+// ---- cloudflared tunnel --url http://localhost:80 + "URL/api/sensors/ingest
+const char* INGEST_URL = "https://subscribers-vic-wins-wesley.trycloudflare.com/api/sensors/ingest   ";
+const char* SENSOR_ID  = "sensor_zone_1";
+const unsigned long SEND_INTERVAL_MS = 30000;   // envío cada 30 s
 unsigned long lastSend = 0;
 
-int readSoilRaw() {
-  long sum = 0;
-  for (int i = 0; i < 10; i++) { sum += analogRead(PIN_SOIL); delay(5); }
-  return sum / 10;
-}
+// --- ASIGNACIÓN DE PINES ---
+#define ONE_WIRE_BUS 4          // Pin del sensor DS18B20 (GPIO 4)
+#define MOISTURE_PIN 34         // Pin del sensor capacitivo de humedad (GPIO 34 / A2)
 
-float rawToPercent(int raw) {
-  float pct = (float)(RAW_DRY - raw) * 100.0 / (float)(RAW_DRY - RAW_WET);
-  return constrain(pct, 0.0, 100.0);
-}
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
 
-void connectWifi() {
-  WiFi.begin(WIFI_SSID, WIFI_PASS, WIFI_CHANNEL);
-  Serial.print("Conectando WiFi");
-  while (WiFi.status() != WL_CONNECTED) { delay(250); Serial.print("."); }
-  Serial.println(" OK");
-}
+// Calibración del sensor de humedad
+const int valorSeco = 3100;
+const int valorHumedo = 1100;
 
-void sendReading() {
-  ds18.requestTemperatures();
-  float temp = ds18.getTempCByIndex(0);
-  if (temp == DEVICE_DISCONNECTED_C) {
-    Serial.println("DS18B20 desconectado, lectura omitida");
-    return;
+void conectarWiFi() {
+  Serial.print("Conectando a ");
+  Serial.println(ssid);
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+
+  int intentos = 0;
+  while (WiFi.status() != WL_CONNECTED && intentos < 30) {
+    delay(500);
+    Serial.print(".");
+    intentos++;
   }
 
-  int raw = readSoilRaw();
-  float hum = rawToPercent(raw);
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\n¡Conectado a la red Wi-Fi!");
+    Serial.print("IP: ");
+    Serial.println(WiFi.localIP());
+    Serial.print("RSSI (Señal): ");
+    Serial.print(WiFi.RSSI());
+    Serial.println(" dBm");
+  } else {
+    Serial.println("\nNo se pudo conectar al Wi-Fi");
+  }
+}
+
+// Envía la lectura al backend. Devuelve el código HTTP (o <0 si falló).
+int enviarLectura(float tempC, int porcentajeHumedad, int valorHumedadRaw) {
+  if (WiFi.status() != WL_CONNECTED) return -1;
 
   char body[200];
   snprintf(body, sizeof(body),
-    "{\"sensor_id\":\"%s\",\"humidity\":%.1f,\"temperature\":%.1f,"
-    "\"raw_adc\":%d,\"rssi\":%d,\"uptime_s\":%lu}",
-    SENSOR_ID, hum, temp, raw, WiFi.RSSI(), millis() / 1000UL);
+    "{\"sensor_id\":\"%s\",\"humidity\":%d,\"temperature\":%.1f,\"raw_adc\":%d,\"rssi\":%d,\"uptime_s\":%lu}",
+    SENSOR_ID, porcentajeHumedad, tempC, valorHumedadRaw, WiFi.RSSI(), millis() / 1000);
 
-  Serial.print("POST -> "); Serial.println(body);
+  Serial.print(" POST -> ");
+  Serial.println(body);
 
-  WiFiClient client;
-  
+  WiFiClientSecure client;
+  client.setInsecure();            // sin validar certificado (suficiente para pruebas)
   HTTPClient http;
-  http.setConnectTimeout(20000);
-  http.setTimeout(20000);
-  http.begin(client, INGEST_URL);
-  http.addHeader("Content-Type", "application/json");
+  http.setConnectTimeout(15000);
+  http.setTimeout(15000);
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+
   int code = -1;
-for (int attempt = 1; attempt <= 3 && code < 0; attempt++) {
-  code = http.POST(body);
-  if (code < 0) {
-    Serial.print("Reintento "); Serial.println(attempt);
-    http.end();
-    delay(1500 * attempt);
-    if (WiFi.status() != WL_CONNECTED) connectWifi();
-    if (attempt < 3) {
-      http.begin(client, INGEST_URL);
-      http.addHeader("Content-Type", "application/json");
+  if (http.begin(client, INGEST_URL)) {
+    http.addHeader("Content-Type", "application/json");
+    code = http.POST(body);
+    if (code > 0) {
+      Serial.print(" HTTP ");
+      Serial.print(code);
+      Serial.print(" -> ");
+      Serial.println(http.getString());
+    } else {
+      Serial.print(" Error HTTP: ");
+      Serial.println(HTTPClient::errorToString(code));
     }
+    http.end();
   }
-}
-  Serial.print("HTTP "); Serial.println(code);
-  if (code > 0) Serial.println(http.getString());
-  http.end();
+  return code;
 }
 
 void setup() {
   Serial.begin(115200);
-  analogReadResolution(12);
-  ds18.begin();
-  connectWifi();
-  sendReading();
-  lastSend = millis();
+  delay(1000);
+
+  // Inicializar sensores
+  sensors.begin();
+  pinMode(MOISTURE_PIN, INPUT);
+
+  // Conectar a internet
+  conectarWiFi();
 }
 
 void loop() {
-  if (WiFi.status() != WL_CONNECTED) connectWifi();
-  if (millis() - lastSend >= SEND_INTERVAL_MS) {
-    lastSend = millis();
-    sendReading();
+  // 1. Verificar y mantener la conexión Wi-Fi (Reconexión automática)
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi perdido, reconectando...");
+    conectarWiFi();
   }
+
+  // 2. Lectura de Temperatura del Entorno (DS18B20)
+  sensors.requestTemperatures();
+  float tempC = sensors.getTempCByIndex(0);
+
+  // 3. Lectura de Humedad del Suelo
+  int valorHumedadRaw = analogRead(MOISTURE_PIN);
+  int porcentajeHumedad = map(valorHumedadRaw, valorSeco, valorHumedo, 0, 100);
+  porcentajeHumedad = constrain(porcentajeHumedad, 0, 100);
+
+  // 4. Mostrar todos los datos en el Monitor Serial
+  Serial.println("------------------------------------------");
+
+  bool tempOk = (tempC != DEVICE_DISCONNECTED_C);
+  if (!tempOk) {
+    Serial.println(" Error: No se detecta el sensor DS18B20.");
+  } else {
+    Serial.print(" Temperatura Entorno: ");
+    Serial.print(tempC);
+    Serial.println(" °C");
+  }
+
+  Serial.print(" Humedad del Suelo: ");
+  Serial.print(porcentajeHumedad);
+  Serial.print(" %  (Valor crudo: ");
+  Serial.print(valorHumedadRaw);
+  Serial.println(")");
+
+  Serial.println(" Estado Wi-Fi: Conectado (IP: " + WiFi.localIP().toString() + ")");
+
+  // 5. Enviar al dashboard cada 30 s (solo si el DS18B20 lee bien)
+  if (tempOk && (lastSend == 0 || millis() - lastSend >= SEND_INTERVAL_MS)) {
+    lastSend = millis();
+    enviarLectura(tempC, porcentajeHumedad, valorHumedadRaw);
+  }
+
+  // Esperar 5 segundos antes de la siguiente lectura
+  delay(5000);
 }
