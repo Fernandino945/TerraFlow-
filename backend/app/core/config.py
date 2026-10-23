@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     SENSOR_TEMP_MAX: float = 60.0
 
     # Simulador de sensores
-    SIMULATE_SENSORS: bool = True
+    SIMULATE_SENSORS: bool = False
 
     # MongoDB
     MONGO_URI: str = "mongodb://mongo:27017"

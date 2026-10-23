@@ -101,7 +101,7 @@ export const Dashboard: React.FC = () => {
           <div className="col-span-2 grid grid-cols-3 gap-4">
             <StatCard
               label="Zonas activas"
-              value={status?.valves.filter(v => v.status === 'open').length ?? 0}
+              value={nodes?.filter(node => node.node_status === 'online').length ?? 0}
               suffix={`/ ${status?.valves.length ?? 0}`}
               color="#4ade80"
             />

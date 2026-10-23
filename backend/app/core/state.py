@@ -214,6 +214,9 @@ async def load_state_from_db():
     Esto es lo que mitiga el riesgo técnico de perder configuración tras una caída:
     válvulas, umbrales y alertas recientes se restauran en vez de partir de cero.
     """
+    if not settings.SIMULATE_SENSORS:
+        await db.delete_simulated_sensor_readings()
+
     # Válvulas
     saved_valves = await db.get_all_valve_states()
     for v in saved_valves:
