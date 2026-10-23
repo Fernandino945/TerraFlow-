@@ -29,7 +29,7 @@ services:
       - LATITUDE=-33.45
       - LONGITUDE=-70.66
       - LOCATION_NAME=Predio Principal
-      - SIMULATE_SENSORS=true
+      - SIMULATE_SENSORS=false
       - FROST_TEMP_THRESHOLD=8.0
       - RAIN_SUSPENSION_THRESHOLD=5.0
       - MONGO_URI=mongodb://mongo:27017

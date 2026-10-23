@@ -47,12 +47,17 @@ def system_events_collection():
 async def save_sensor_reading(reading: dict):
     await sensor_history_collection().insert_one(reading)
 
-async def get_sensor_history(zone_id: Optional[str] = None, limit: int = 100):
-    query = {"sensor_id": f"sensor_{zone_id}"} if zone_id else {}
+async def get_sensor_history(zone_id: Optional[str] = None, limit: int = 100, source: str = "esp32"):
+    query = {"source": source}
+    if zone_id:
+        query["sensor_id"] = f"sensor_{zone_id}"
     cursor = sensor_history_collection().find(query).sort("timestamp", -1).limit(limit)
     docs = await cursor.to_list(length=limit)
     docs.reverse()
     return docs
+
+async def delete_simulated_sensor_readings():
+    await sensor_history_collection().delete_many({"source": "simulator"})
 
 async def prune_old_readings(older_than_days: int = 30):
     cutoff = datetime.utcnow() - timedelta(days=older_than_days)

@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from app.core import database as db
 from app.core import state
@@ -14,6 +15,12 @@ router = APIRouter()
 # HU-23: diagnóstico por zona del último contacto del nodo ESP32 (se llena en /ingest).
 # Vive en memoria; la última lectura real se recupera de Mongo si el backend se reinicia.
 _node_diag: Dict[str, dict] = {}
+
+
+class GatewayHeartbeat(BaseModel):
+    sensor_id: Optional[str] = None
+    rssi: Optional[int] = None
+    uptime_s: Optional[int] = None
 
 
 @router.get("/", response_model=List[SensorReading])
@@ -35,17 +42,22 @@ async def get_system_status():
 
 @router.get("/history", response_model=List[SensorReading])
 async def get_sensor_history(zone_id: str = None, limit: int = 100):
-    """Historial de lecturas por zona."""
-    history = state.reading_history
+    """Historial de lecturas reales por zona."""
+    history = [reading for reading in state.reading_history if reading.source == "esp32"]
     if zone_id:
         history = [r for r in history if r.sensor_id == f"sensor_{zone_id}"]
     return history[-limit:]
 
 @router.post("/gateway/heartbeat")
-async def gateway_heartbeat():
-    """El Gateway loRaWAN llama esto periodicamente para confirmar que esta vivo."""
+async def gateway_heartbeat(payload: Optional[GatewayHeartbeat] = None):
+    """Recibe el heartbeat WiFi del ESP32 o del Gateway LoRaWAN futuro."""
     state.last_gateway_heartbeat = datetime.utcnow()
-    return {"status": "ok", "received_at": state.last_gateway_heartbeat}
+    origin = payload.sensor_id if payload and payload.sensor_id else "gateway"
+    return {
+        "status": "ok",
+        "source": origin,
+        "received_at": state.last_gateway_heartbeat,
+    }
 
 
 @router.post("/ingest")
@@ -55,9 +67,7 @@ async def ingest_sensor(payload: SensorIngest):
     if zone_id not in {z["id"] for z in state.ZONES}:
         raise HTTPException(status_code=404, detail=f"sensor_id '{payload.sensor_id}' no registrado")
 
-    # El nodo está vivo aunque su lectura sea inválida: cuenta como heartbeat
     now = datetime.utcnow()
-    state.last_gateway_heartbeat = now  # PROVISORIO hasta HU-21
 
     # HU-23: registrar el contacto del nodo para el diagnóstico
     diag = _node_diag.setdefault(zone_id, {"discarded_total": 0})

@@ -10,10 +10,13 @@ const char* password = "sbgs8189";
 
 // --- BACKEND (URL del túnel Cloudflare, con la ruta completa) ---
 // ---- cloudflared tunnel --url http://localhost:80 + "URL/api/sensors/ingest
-const char* INGEST_URL = "https://subscribers-vic-wins-wesley.trycloudflare.com/api/sensors/ingest   ";
+const char* INGEST_URL = "https://breeding-validity-observer-juvenile.trycloudflare.com/api/sensors/ingest";
+const char* HEARTBEAT_URL = "https://breeding-validity-observer-juvenile.trycloudflare.com/api/sensors/gateway/heartbeat";
 const char* SENSOR_ID  = "sensor_zone_1";
 const unsigned long SEND_INTERVAL_MS = 30000;   // envío cada 30 s
+const unsigned long HEARTBEAT_INTERVAL_MS = 15000; // heartbeat cada 15 s
 unsigned long lastSend = 0;
+unsigned long lastHeartbeat = 0;
 
 // --- ASIGNACIÓN DE PINES ---
 #define ONE_WIRE_BUS 4          // Pin del sensor DS18B20 (GPIO 4)
@@ -89,6 +92,39 @@ int enviarLectura(float tempC, int porcentajeHumedad, int valorHumedadRaw) {
   return code;
 }
 
+// Confirma que el nodo sigue conectado aunque el sensor de temperatura falle.
+int enviarHeartbeat() {
+  if (WiFi.status() != WL_CONNECTED) return -1;
+
+  char body[120];
+  snprintf(body, sizeof(body),
+    "{\"sensor_id\":\"%s\",\"rssi\":%d,\"uptime_s\":%lu}",
+    SENSOR_ID, WiFi.RSSI(), millis() / 1000);
+
+  WiFiClientSecure client;
+  client.setInsecure();
+  HTTPClient http;
+  http.setConnectTimeout(15000);
+  http.setTimeout(15000);
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+
+  int code = -1;
+  if (http.begin(client, HEARTBEAT_URL)) {
+    http.addHeader("Content-Type", "application/json");
+    code = http.POST(body);
+    Serial.print(" HEARTBEAT -> ");
+    if (code > 0) {
+      Serial.println(code);
+    } else {
+      Serial.println(HTTPClient::errorToString(code));
+    }
+    http.end();
+  } else {
+    Serial.println(" HEARTBEAT -> no se pudo iniciar HTTP");
+  }
+  return code;
+}
+
 void setup() {
   Serial.begin(115200);
   delay(1000);
@@ -141,6 +177,12 @@ void loop() {
   if (tempOk && (lastSend == 0 || millis() - lastSend >= SEND_INTERVAL_MS)) {
     lastSend = millis();
     enviarLectura(tempC, porcentajeHumedad, valorHumedadRaw);
+  }
+
+  // Mantener el heartbeat independiente de las lecturas de sensores.
+  if (lastHeartbeat == 0 || millis() - lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
+    lastHeartbeat = millis();
+    enviarHeartbeat();
   }
 
   // Esperar 5 segundos antes de la siguiente lectura

@@ -76,7 +76,7 @@ export const NodeStatusPanel: React.FC<Props> = ({ nodes }) => {
 
               {node.node_status === 'never' ? (
                 <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                  Esta zona no ha recibido datos de un ESP32. Sus lecturas provienen del simulador.
+                  Esta zona no ha recibido datos reales de un ESP32.
                 </div>
               ) : (
                 <>
