@@ -3,6 +3,7 @@
 #include <HTTPClient.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <Preferences.h>
 
 // --- TUS CREDENCIALES DE WI-FI ---
 const char* ssid = "Yak-3";
@@ -26,8 +27,97 @@ OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
 
 // Calibración del sensor de humedad
-const int valorSeco = 3100;
-const int valorHumedo = 1100;
+const int DEFAULT_DRY_ADC = 3100;
+const int DEFAULT_WET_ADC = 1100;
+const int CALIBRATION_SAMPLES = 32;
+const char* CALIBRATION_NAMESPACE = "soil-cal";
+int valorSeco = DEFAULT_DRY_ADC;
+int valorHumedo = DEFAULT_WET_ADC;
+Preferences calibrationStorage;
+
+int readMoistureRaw() {
+  long total = 0;
+  for (int i = 0; i < CALIBRATION_SAMPLES; i++) {
+    total += analogRead(MOISTURE_PIN);
+    delay(10);
+  }
+  return total / CALIBRATION_SAMPLES;
+}
+
+void loadCalibration() {
+  if (!calibrationStorage.begin(CALIBRATION_NAMESPACE, true)) {
+    Serial.println("Error: no se pudo abrir la memoria de calibracion.");
+    return;
+  }
+  valorSeco = calibrationStorage.getInt("dry", DEFAULT_DRY_ADC);
+  valorHumedo = calibrationStorage.getInt("wet", DEFAULT_WET_ADC);
+  calibrationStorage.end();
+
+  if (valorSeco <= valorHumedo) {
+    Serial.println("Calibracion invalida guardada; usando valores por defecto.");
+    valorSeco = DEFAULT_DRY_ADC;
+    valorHumedo = DEFAULT_WET_ADC;
+  }
+}
+
+void saveCalibration(int dryAdc, int wetAdc) {
+  if (dryAdc <= wetAdc || dryAdc > 4095 || wetAdc < 0) {
+    Serial.println("Error: calibracion fuera de rango; seco debe ser mayor que humedo (0-4095).");
+    return;
+  }
+
+  if (!calibrationStorage.begin(CALIBRATION_NAMESPACE, false)) {
+    Serial.println("Error: no se pudo guardar la calibracion.");
+    return;
+  }
+  const size_t dryBytes = calibrationStorage.putInt("dry", dryAdc);
+  const size_t wetBytes = calibrationStorage.putInt("wet", wetAdc);
+  calibrationStorage.end();
+  if (dryBytes == 0 || wetBytes == 0) {
+    Serial.println("Error: no se pudo escribir la calibracion completa.");
+    return;
+  }
+  valorSeco = dryAdc;
+  valorHumedo = wetAdc;
+  Serial.printf("Calibracion guardada: seco=%d, humedo=%d\n", valorSeco, valorHumedo);
+}
+
+void printCalibrationHelp() {
+  Serial.println("Comandos de calibracion:");
+  Serial.println("  cal dry   - coloca el sensor en suelo seco y toma muestras");
+  Serial.println("  cal wet   - coloca el sensor en suelo humedo y toma muestras");
+  Serial.println("  cal show  - muestra los valores actuales");
+  Serial.println("  cal reset - restaura los valores por defecto");
+}
+
+void printCalibration() {
+  Serial.printf("Calibracion actual: seco=%d, humedo=%d\n", valorSeco, valorHumedo);
+}
+
+void handleSerialCommand() {
+  if (!Serial.available()) return;
+
+  String command = Serial.readStringUntil('\n');
+  command.trim();
+  command.toLowerCase();
+
+  if (command == "cal dry" || command == "cal wet") {
+    const bool drySample = command == "cal dry";
+    Serial.printf("Muestreando punto %s (%d lecturas)...\n",
+      drySample ? "seco" : "humedo", CALIBRATION_SAMPLES);
+    const int value = readMoistureRaw();
+    Serial.printf("ADC %s: %d\n", drySample ? "seco" : "humedo", value);
+    saveCalibration(drySample ? value : valorSeco, drySample ? valorHumedo : value);
+  } else if (command == "cal show") {
+    printCalibration();
+  } else if (command == "cal reset") {
+    saveCalibration(DEFAULT_DRY_ADC, DEFAULT_WET_ADC);
+  } else if (command == "cal help") {
+    printCalibrationHelp();
+  } else {
+    Serial.println("Comando no reconocido. Escribe 'cal help'.");
+  }
+}
 
 void conectarWiFi() {
   Serial.print("Conectando a ");
@@ -132,12 +222,17 @@ void setup() {
   // Inicializar sensores
   sensors.begin();
   pinMode(MOISTURE_PIN, INPUT);
+  loadCalibration();
+  printCalibration();
+  printCalibrationHelp();
 
   // Conectar a internet
   conectarWiFi();
 }
 
 void loop() {
+  handleSerialCommand();
+
   // 1. Verificar y mantener la conexión Wi-Fi (Reconexión automática)
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("WiFi perdido, reconectando...");
@@ -149,7 +244,7 @@ void loop() {
   float tempC = sensors.getTempCByIndex(0);
 
   // 3. Lectura de Humedad del Suelo
-  int valorHumedadRaw = analogRead(MOISTURE_PIN);
+  int valorHumedadRaw = readMoistureRaw();
   int porcentajeHumedad = map(valorHumedadRaw, valorSeco, valorHumedo, 0, 100);
   porcentajeHumedad = constrain(porcentajeHumedad, 0, 100);
 

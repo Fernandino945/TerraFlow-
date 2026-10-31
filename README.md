@@ -179,6 +179,21 @@ GET  /api/reports/monthly    → Reporte mensual de consumo hídrico
 
 ---
 
+## 🧪 Calibración del sensor capacitivo
+
+El nodo ESP32 guarda los puntos de calibración del sensor en su memoria `Preferences`,
+por lo que no se pierde al reiniciar. Con el monitor serial a **115200 baudios**:
+
+1. Deja la sonda en suelo seco y envía `cal dry`.
+2. Coloca la sonda en suelo húmedo y envía `cal wet`.
+3. Usa `cal show` para verificar los valores o `cal reset` para restaurar los valores iniciales.
+
+Cada punto se calcula con 32 muestras promediadas. El nodo rechaza una calibración
+inválida y sigue usando los valores anteriores. La lectura cruda y el porcentaje
+calibrado continúan enviándose al endpoint `/api/sensors/ingest`.
+
+---
+
 ## 🧠 Lógica de lazo cerrado
 
 ```
