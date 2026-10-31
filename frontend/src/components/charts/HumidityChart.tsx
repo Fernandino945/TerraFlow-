@@ -105,7 +105,7 @@ export const HumidityChart: React.FC<Props> = ({ history, thresholds, zoneName }
 
 const Legend: React.FC<{ color: string; label: string; dashed?: boolean }> = ({ color, label, dashed }) => (
   <div className="flex items-center gap-1.5">
-    <div style={{ width: 20, height: 2, background: color, opacity: dashed ? 0.6 : 1, borderTop: dashed ? `2px dashed ${color}` : undefined, background: dashed ? 'none' : color }} />
+    <div style={{ width: 20, height: 2, opacity: dashed ? 0.6 : 1, borderTop: dashed ? `2px dashed ${color}` : undefined, background: dashed ? 'none' : color }} />
     <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{label}</span>
   </div>
 )
