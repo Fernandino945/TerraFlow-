@@ -19,6 +19,7 @@ async def command_valve(cmd: ValveCommand):
 
     new_status = ValveStatus.OPEN if cmd.action == "open" else ValveStatus.CLOSED
     valve.status = new_status
+    valve.desired_status = new_status
     valve.last_changed = datetime.utcnow()
     valve.auto_mode = False  # Modo manual
     state.persist_valve(valve)

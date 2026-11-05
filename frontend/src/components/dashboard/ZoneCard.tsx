@@ -11,7 +11,8 @@ interface Props {
 }
 
 export const ZoneCard: React.FC<Props> = ({ sensor, valve, onToggleValve, onToggleAuto }) => {
-  const isOpen = valve?.status === 'open'
+  const desiredOpen = valve?.desired_status === 'open'
+  const actualOpen = valve?.actual_status === 'open'
   const isAuto = valve?.auto_mode ?? true
 
   const humidityColor =
@@ -75,10 +76,13 @@ export const ZoneCard: React.FC<Props> = ({ sensor, valve, onToggleValve, onTogg
             <div className="flex items-center gap-2">
               <div
                 className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: isOpen ? '#4ade80' : '#ef4444' }}
+                style={{ backgroundColor: actualOpen ? '#4ade80' : '#ef4444' }}
               />
-              <span className="mono text-xs" style={{ color: isOpen ? '#4ade80' : '#ef4444' }}>
-                {isOpen ? 'ABIERTA' : 'CERRADA'}
+              <span className="mono text-xs" style={{ color: actualOpen ? '#4ade80' : '#ef4444' }}>
+                Real: {actualOpen ? 'ABIERTA' : 'CERRADA'}
+              </span>
+              <span className="mono text-xs" style={{ color: desiredOpen === actualOpen ? 'var(--text-muted)' : '#fbbf24' }}>
+                Deseada: {desiredOpen ? 'ABIERTA' : 'CERRADA'}
               </span>
             </div>
           </div>
@@ -114,10 +118,10 @@ export const ZoneCard: React.FC<Props> = ({ sensor, valve, onToggleValve, onTogg
             <div className="flex gap-2">
               <button
                 onClick={() => onToggleValve(valve.valve_id, 'open')}
-                disabled={isOpen}
+                disabled={desiredOpen}
                 className="flex-1 py-2 rounded-lg text-xs font-semibold transition-all disabled:opacity-40"
                 style={{
-                  background: isOpen ? 'rgba(74,222,128,0.08)' : 'rgba(74,222,128,0.2)',
+                  background: desiredOpen ? 'rgba(74,222,128,0.08)' : 'rgba(74,222,128,0.2)',
                   color: '#4ade80',
                   border: '1px solid rgba(74,222,128,0.3)',
                 }}
@@ -126,10 +130,10 @@ export const ZoneCard: React.FC<Props> = ({ sensor, valve, onToggleValve, onTogg
               </button>
               <button
                 onClick={() => onToggleValve(valve.valve_id, 'close')}
-                disabled={!isOpen}
+                disabled={!desiredOpen}
                 className="flex-1 py-2 rounded-lg text-xs font-semibold transition-all disabled:opacity-40"
                 style={{
-                  background: !isOpen ? 'rgba(239,68,68,0.08)' : 'rgba(239,68,68,0.2)',
+                  background: !desiredOpen ? 'rgba(239,68,68,0.08)' : 'rgba(239,68,68,0.2)',
                   color: '#ef4444',
                   border: '1px solid rgba(239,68,68,0.3)',
                 }}

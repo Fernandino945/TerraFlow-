@@ -47,8 +47,15 @@ async def gateway_heartbeat(payload: Optional[GatewayHeartbeat] = None):
     """Recibe el heartbeat WiFi del ESP32 o del Gateway LoRaWAN futuro."""
     state.last_gateway_heartbeat = datetime.utcnow()
     origin = payload.sensor_id if payload and payload.sensor_id else "gateway"
+    desired_status = None
     if payload and origin.startswith("sensor_"):
         zone_id = origin.removeprefix("sensor_")
+        valve = state.valve_states.get(zone_id)
+        if valve:
+            if payload.actual_status is not None:
+                valve.actual_status = payload.actual_status
+                state.persist_valve(valve)
+            desired_status = valve.desired_status
         diag = _node_diag.setdefault(zone_id, {"discarded_total": 0})
         diag.update(
             last_contact=state.last_gateway_heartbeat,
@@ -69,6 +76,8 @@ async def gateway_heartbeat(payload: Optional[GatewayHeartbeat] = None):
     return {
         "status": "ok",
         "source": origin,
+        "valve_id": origin.removeprefix("sensor_") if origin.startswith("sensor_") else None,
+        "desired_status": desired_status,
         "failsafe_active": payload.failsafe_active if payload else False,
         "failure_count": payload.failure_count if payload else 0,
         "received_at": state.last_gateway_heartbeat,

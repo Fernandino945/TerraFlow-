@@ -14,6 +14,7 @@ const char* password = "sbgs8189";
 const char* INGEST_URL = "https://breeding-validity-observer-juvenile.trycloudflare.com/api/sensors/ingest";
 const char* HEARTBEAT_URL = "https://breeding-validity-observer-juvenile.trycloudflare.com/api/sensors/gateway/heartbeat";
 const char* SENSOR_ID  = "sensor_zone_1";
+const uint8_t VALVE_PIN = 2;  // LED/relé de prueba; salida activa en bajo
 const unsigned long SEND_INTERVAL_MS = 30000;   // envío cada 30 s
 const unsigned long HEARTBEAT_INTERVAL_MS = 15000; // heartbeat cada 15 s
 unsigned long lastSend = 0;
@@ -22,6 +23,7 @@ const uint8_t MAX_COMMUNICATION_FAILURES = 3;
 uint8_t consecutiveCommunicationFailures = 0;
 bool localFailsafeActive = false;
 const char* localFailsafeReason = nullptr;
+bool valveOpen = false;
 
 // --- ASIGNACIÓN DE PINES ---
 #define ONE_WIRE_BUS 4          // Pin del sensor DS18B20 (GPIO 4)
@@ -38,6 +40,25 @@ const char* CALIBRATION_NAMESPACE = "soil-cal";
 int valorSeco = DEFAULT_DRY_ADC;
 int valorHumedo = DEFAULT_WET_ADC;
 Preferences calibrationStorage;
+
+void setValveOutput(bool open) {
+  valveOpen = open;
+  digitalWrite(VALVE_PIN, open ? LOW : HIGH);
+}
+
+void applyDesiredValveState(const String& response) {
+  if (localFailsafeActive) {
+    setValveOutput(false);
+    return;
+  }
+  const bool shouldOpen = response.indexOf("\"desired_status\":\"open\"") >= 0;
+  const bool shouldClose = response.indexOf("\"desired_status\":\"closed\"") >= 0;
+  if (shouldOpen) {
+    setValveOutput(true);
+  } else if (shouldClose) {
+    setValveOutput(false);
+  }
+}
 
 int readMoistureRaw() {
   long total = 0;
@@ -198,6 +219,7 @@ void recordCommunicationResult(int code, const char* reason) {
   if (consecutiveCommunicationFailures >= MAX_COMMUNICATION_FAILURES) {
     localFailsafeActive = true;
     localFailsafeReason = reason;
+    setValveOutput(false);
     Serial.printf("FAILSAFE local activo: %s (%u fallos)\n",
       reason, consecutiveCommunicationFailures);
   }
@@ -207,11 +229,12 @@ void recordCommunicationResult(int code, const char* reason) {
 int enviarHeartbeat() {
   if (WiFi.status() != WL_CONNECTED) return -1;
 
-  char body[120];
+  char body[220];
   snprintf(body, sizeof(body),
-    "{\"sensor_id\":\"%s\",\"rssi\":%d,\"uptime_s\":%lu,"
+    "{\"sensor_id\":\"%s\",\"rssi\":%d,\"uptime_s\":%lu,\"actual_status\":\"%s\","
     "\"failsafe_active\":%s,\"failure_count\":%u,\"failure_reason\":\"%s\"}",
     SENSOR_ID, WiFi.RSSI(), millis() / 1000,
+    valveOpen ? "open" : "closed",
     localFailsafeActive ? "true" : "false",
     consecutiveCommunicationFailures,
     localFailsafeReason ? localFailsafeReason : "");
@@ -229,7 +252,11 @@ int enviarHeartbeat() {
     code = http.POST(body);
     Serial.print(" HEARTBEAT -> ");
     if (code > 0) {
-      Serial.println(code);
+      const String response = http.getString();
+      applyDesiredValveState(response);
+      Serial.print(code);
+      Serial.print(" -> ");
+      Serial.println(response);
     } else {
       Serial.println(HTTPClient::errorToString(code));
     }
@@ -243,6 +270,9 @@ int enviarHeartbeat() {
 void setup() {
   Serial.begin(115200);
   delay(1000);
+
+  pinMode(VALVE_PIN, OUTPUT);
+  setValveOutput(false);
 
   // Inicializar sensores
   sensors.begin();

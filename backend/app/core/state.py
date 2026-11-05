@@ -221,6 +221,8 @@ async def load_state_from_db():
     saved_valves = await db.get_all_valve_states()
     for v in saved_valves:
         v.pop("_id", None)
+        v.setdefault("desired_status", v.get("status", "closed"))
+        v.setdefault("actual_status", v.get("status", "closed"))
         valve_states[v["valve_id"]] = ValveState(**v)
 
     # Umbrales
