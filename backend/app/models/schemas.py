@@ -44,11 +44,14 @@ class GatewayHeartbeat(BaseModel):
     failsafe_active: bool = False
     failure_count: int = Field(default=0, ge=0)
     failure_reason: Optional[str] = None
+    actual_status: Optional[ValveStatus] = None
 
 class ValveState(BaseModel):
     valve_id: str
     zone_name: str
     status: ValveStatus = ValveStatus.CLOSED
+    desired_status: ValveStatus = ValveStatus.CLOSED
+    actual_status: ValveStatus = ValveStatus.CLOSED
     last_changed: datetime = Field(default_factory=datetime.utcnow)
     auto_mode: bool = True
 

@@ -28,6 +28,7 @@ def set_weather_context(suspended: bool, reason: str = ""):
 
 def _close_valve(valve, reason_msg: str = None, level: AlertLevel = None, zone: str = None):
     valve.status = ValveStatus.CLOSED
+    valve.desired_status = ValveStatus.CLOSED
     valve.last_changed = datetime.utcnow()
     state.persist_valve(valve)
     if reason_msg:
@@ -36,6 +37,7 @@ def _close_valve(valve, reason_msg: str = None, level: AlertLevel = None, zone: 
 
 def _open_valve(valve, reason_msg: str = None, level: AlertLevel = None, zone: str = None):
     valve.status = ValveStatus.OPEN
+    valve.desired_status = ValveStatus.OPEN
     valve.last_changed = datetime.utcnow()
     state.persist_valve(valve)
     if reason_msg:

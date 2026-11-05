@@ -19,6 +19,8 @@ export interface ValveState {
   valve_id: string
   zone_name: string
   status: 'open' | 'closed' | 'error'
+  desired_status: 'open' | 'closed' | 'error'
+  actual_status: 'open' | 'closed' | 'error'
   last_changed: string
   auto_mode: boolean
 }

@@ -32,6 +32,7 @@ def _trigger_failsafe(elapsed_seconds: float):
     for valve in state.valve_states.values():
         if valve.status != ValveStatus.CLOSED and settings.FAILSAFE_VALVE_STATE == "closed":
             valve.status = ValveStatus.CLOSED
+            valve.desired_status = ValveStatus.CLOSED
             valve.last_changed = datetime.utcnow()
             state.persist_valve(valve)
             closed_any = True
