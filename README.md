@@ -194,6 +194,20 @@ calibrado continúan enviándose al endpoint `/api/sensors/ingest`.
 
 ---
 
+## 🛡️ Failsafe local del nodo ESP32
+
+El firmware cuenta los fallos consecutivos al enviar lecturas o heartbeats. Después
+de tres fallos, marca el failsafe local, informa el estado en el siguiente heartbeat
+que consiga entregar y reinicia el ESP32 para recuperar la comunicación. El backend
+registra el evento como alerta `WARNING` y el diagnóstico del nodo lo muestra en el
+dashboard junto con el contador y la causa.
+
+Esta protección cubre la recuperación y comunicación del nodo. El cierre físico de
+una electroválvula requiere incorporar un relé y una válvula, hardware que no forma
+parte del montaje actual.
+
+---
+
 ## 🧠 Lógica de lazo cerrado
 
 ```

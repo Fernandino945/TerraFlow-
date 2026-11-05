@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from app.core import database as db
 from app.core import state
 from app.core.config import settings
-from app.models.schemas import SensorReading, SystemStatus, SensorIngest
+from app.models.schemas import AlertLevel, SensorReading, SystemStatus, SensorIngest, GatewayHeartbeat
 from app.services import sensor_validation
 
 router = APIRouter()
@@ -15,12 +15,6 @@ router = APIRouter()
 # HU-23: diagnóstico por zona del último contacto del nodo ESP32 (se llena en /ingest).
 # Vive en memoria; la última lectura real se recupera de Mongo si el backend se reinicia.
 _node_diag: Dict[str, dict] = {}
-
-
-class GatewayHeartbeat(BaseModel):
-    sensor_id: Optional[str] = None
-    rssi: Optional[int] = None
-    uptime_s: Optional[int] = None
 
 
 @router.get("/", response_model=List[SensorReading])
@@ -53,9 +47,30 @@ async def gateway_heartbeat(payload: Optional[GatewayHeartbeat] = None):
     """Recibe el heartbeat WiFi del ESP32 o del Gateway LoRaWAN futuro."""
     state.last_gateway_heartbeat = datetime.utcnow()
     origin = payload.sensor_id if payload and payload.sensor_id else "gateway"
+    if payload and origin.startswith("sensor_"):
+        zone_id = origin.removeprefix("sensor_")
+        diag = _node_diag.setdefault(zone_id, {"discarded_total": 0})
+        diag.update(
+            last_contact=state.last_gateway_heartbeat,
+            rssi=payload.rssi,
+            uptime_s=payload.uptime_s,
+            failsafe_active=payload.failsafe_active,
+            failure_count=payload.failure_count,
+            failure_reason=payload.failure_reason,
+        )
+    if payload and payload.failsafe_active:
+        state.add_alert(
+            AlertLevel.WARNING,
+            f"Failsafe local reportado por {origin}: "
+            f"{payload.failure_reason or 'fallos de comunicación'} "
+            f"({payload.failure_count} fallos).",
+            zone=origin.removeprefix("sensor_"),
+        )
     return {
         "status": "ok",
         "source": origin,
+        "failsafe_active": payload.failsafe_active if payload else False,
+        "failure_count": payload.failure_count if payload else 0,
         "received_at": state.last_gateway_heartbeat,
     }
 
@@ -172,5 +187,8 @@ async def get_node_status():
             "discarded_total": diag.get("discarded_total", 0),
             "last_discard_reason": diag.get("last_discard_reason"),
             "last_discard_at": _iso(diag.get("last_discard_at")),
+            "failsafe_active": diag.get("failsafe_active", False),
+            "failure_count": diag.get("failure_count", 0),
+            "failure_reason": diag.get("failure_reason"),
         })
     return nodes

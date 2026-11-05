@@ -36,6 +36,15 @@ class SensorIngest(BaseModel):
     rssi: Optional[int] = None
     uptime_s: Optional[int] = None
 
+class GatewayHeartbeat(BaseModel):
+    """Estado de conectividad y failsafe reportado por un nodo ESP32."""
+    sensor_id: Optional[str] = None
+    rssi: Optional[int] = None
+    uptime_s: Optional[int] = None
+    failsafe_active: bool = False
+    failure_count: int = Field(default=0, ge=0)
+    failure_reason: Optional[str] = None
+
 class ValveState(BaseModel):
     valve_id: str
     zone_name: str

@@ -18,6 +18,10 @@ const unsigned long SEND_INTERVAL_MS = 30000;   // envío cada 30 s
 const unsigned long HEARTBEAT_INTERVAL_MS = 15000; // heartbeat cada 15 s
 unsigned long lastSend = 0;
 unsigned long lastHeartbeat = 0;
+const uint8_t MAX_COMMUNICATION_FAILURES = 3;
+uint8_t consecutiveCommunicationFailures = 0;
+bool localFailsafeActive = false;
+const char* localFailsafeReason = nullptr;
 
 // --- ASIGNACIÓN DE PINES ---
 #define ONE_WIRE_BUS 4          // Pin del sensor DS18B20 (GPIO 4)
@@ -182,14 +186,35 @@ int enviarLectura(float tempC, int porcentajeHumedad, int valorHumedadRaw) {
   return code;
 }
 
+void recordCommunicationResult(int code, const char* reason) {
+  if (code >= 200 && code < 300) {
+    consecutiveCommunicationFailures = 0;
+    return;
+  }
+
+  if (consecutiveCommunicationFailures < 255) {
+    consecutiveCommunicationFailures++;
+  }
+  if (consecutiveCommunicationFailures >= MAX_COMMUNICATION_FAILURES) {
+    localFailsafeActive = true;
+    localFailsafeReason = reason;
+    Serial.printf("FAILSAFE local activo: %s (%u fallos)\n",
+      reason, consecutiveCommunicationFailures);
+  }
+}
+
 // Confirma que el nodo sigue conectado aunque el sensor de temperatura falle.
 int enviarHeartbeat() {
   if (WiFi.status() != WL_CONNECTED) return -1;
 
   char body[120];
   snprintf(body, sizeof(body),
-    "{\"sensor_id\":\"%s\",\"rssi\":%d,\"uptime_s\":%lu}",
-    SENSOR_ID, WiFi.RSSI(), millis() / 1000);
+    "{\"sensor_id\":\"%s\",\"rssi\":%d,\"uptime_s\":%lu,"
+    "\"failsafe_active\":%s,\"failure_count\":%u,\"failure_reason\":\"%s\"}",
+    SENSOR_ID, WiFi.RSSI(), millis() / 1000,
+    localFailsafeActive ? "true" : "false",
+    consecutiveCommunicationFailures,
+    localFailsafeReason ? localFailsafeReason : "");
 
   WiFiClientSecure client;
   client.setInsecure();
@@ -271,13 +296,21 @@ void loop() {
   // 5. Enviar al dashboard cada 30 s (solo si el DS18B20 lee bien)
   if (tempOk && (lastSend == 0 || millis() - lastSend >= SEND_INTERVAL_MS)) {
     lastSend = millis();
-    enviarLectura(tempC, porcentajeHumedad, valorHumedadRaw);
+    const int code = enviarLectura(tempC, porcentajeHumedad, valorHumedadRaw);
+    recordCommunicationResult(code, "fallo al enviar lectura");
   }
 
   // Mantener el heartbeat independiente de las lecturas de sensores.
   if (lastHeartbeat == 0 || millis() - lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
     lastHeartbeat = millis();
-    enviarHeartbeat();
+    const int code = enviarHeartbeat();
+    const bool failsafeReported = localFailsafeActive;
+    recordCommunicationResult(code, "fallo de heartbeat");
+    if (failsafeReported && code >= 200 && code < 300) {
+      Serial.println("Failsafe reportado; reiniciando el ESP32.");
+      delay(1000);
+      ESP.restart();
+    }
   }
 
   // Esperar 5 segundos antes de la siguiente lectura

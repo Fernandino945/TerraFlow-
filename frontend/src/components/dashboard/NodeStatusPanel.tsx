@@ -131,6 +131,16 @@ export const NodeStatusPanel: React.FC<Props> = ({ nodes }) => {
                       </span>
                     </div>
                   )}
+                  {node.failsafe_active && (
+                    <div className="flex items-start gap-1.5 text-xs" style={{ color: '#fbbf24' }}>
+                      <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" />
+                      <span>
+                        Failsafe local activo
+                        {node.failure_reason ? ` — ${node.failure_reason}` : ''}
+                        {node.failure_count > 0 ? ` (${node.failure_count} fallos)` : ''}
+                      </span>
+                    </div>
+                  )}
                   {node.node_status === 'no_report' && (
                     <div className="text-xs font-medium" style={{ color: '#ef4444' }}>
                       El nodo superó el umbral sin reportar. Revisar alimentación, WiFi y sensores.

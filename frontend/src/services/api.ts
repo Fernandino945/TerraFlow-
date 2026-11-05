@@ -177,6 +177,9 @@ export interface NodeStatus {
   discarded_total: number
   last_discard_reason: string | null
   last_discard_at: string | null
+  failsafe_active: boolean
+  failure_count: number
+  failure_reason: string | null
 }
 
 export const fetchNodeStatus = () => api.get<NodeStatus[]>('/sensors/node-status').then(r => r.data)
