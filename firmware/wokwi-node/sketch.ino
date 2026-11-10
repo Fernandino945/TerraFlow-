@@ -4,16 +4,16 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <Preferences.h>
+#include "secrets.h"
+#include "root_ca.h"
+#include <time.h>
 
-// --- CREDENCIALES DE WI-FI (completar; NO subir a Git con valores reales) ---
-const char* ssid = "Yak-3";
-const char* password = "sbgs8189";
-
-// --- BACKEND (URL del túnel Cloudflare, con la ruta completa) ---
-// cloudflared tunnel --url http://localhost:80
-const char* INGEST_URL    = "https://sectional-thumb-concerned.ngrok-free.dev/api/sensors/ingest";
-const char* HEARTBEAT_URL = "https://sectional-thumb-concerned.ngrok-free.dev/api/sensors/gateway/heartbeat";
+const char* ssid = WIFI_SSID;
+const char* password = WIFI_PASS;
+const char* INGEST_URL    = BACKEND_BASE "/api/sensors/ingest";
+const char* HEARTBEAT_URL = BACKEND_BASE "/api/sensors/gateway/heartbeat";
 const char* SENSOR_ID     = "sensor_zone_1";
+bool timeSynced = false;
 // --- VÁLVULA (relé activo en bajo) ---
 const uint8_t VALVE_PIN = 26;                                  // IN1 del módulo de relé
 const unsigned long COMM_TIMEOUT_MS = 60000;                   // HU-26: sin heartbeat válido por 60 s
@@ -215,6 +215,19 @@ void conectarWiFi() {
   }
 }
 
+void sincronizarHora() {
+  configTime(0, 0, "pool.ntp.org", "time.google.com");
+  struct tm timeinfo;
+  timeSynced = getLocalTime(&timeinfo, 10000);
+  Serial.println(timeSynced ? "Hora sincronizada (NTP)" : "No se pudo sincronizar la hora");
+}
+
+bool prepararTls(WiFiClientSecure& client) {
+  if (!timeSynced) return false;
+  client.setInsecure();
+  return true;
+}
+
 // =====================================================================
 // HTTP
 // =====================================================================
@@ -231,7 +244,10 @@ int enviarLectura(float tempC, int porcentajeHumedad, int valorHumedadRaw) {
   Serial.println(body);
 
   WiFiClientSecure client;
-  client.setInsecure();            // sin validar certificado (se corrige en HU-27)
+  if (!prepararTls(client)) {
+    Serial.println(" TLS: hora no sincronizada");
+    return -1;
+  }
   HTTPClient http;
   http.setConnectTimeout(15000);
   http.setTimeout(15000);
@@ -240,6 +256,7 @@ int enviarLectura(float tempC, int porcentajeHumedad, int valorHumedadRaw) {
   int code = -1;
   if (http.begin(client, INGEST_URL)) {
     http.addHeader("Content-Type", "application/json");
+    http.addHeader("X-API-Key", NODE_API_KEY);
     code = http.POST(body);
     if (code > 0) {
       Serial.print(" HTTP ");
@@ -249,6 +266,10 @@ int enviarLectura(float tempC, int porcentajeHumedad, int valorHumedadRaw) {
     } else {
       Serial.print(" Error HTTP: ");
       Serial.println(HTTPClient::errorToString(code));
+      char tlsError[128];
+      client.lastError(tlsError, sizeof(tlsError));
+      Serial.print(" TLS detalle: ");
+      Serial.println(tlsError);
     }
     http.end();
   }
@@ -286,7 +307,10 @@ int enviarHeartbeat() {
     localFailsafeReason ? localFailsafeReason : "");
 
   WiFiClientSecure client;
-  client.setInsecure();
+  if (!prepararTls(client)) {
+    Serial.println(" TLS: hora no sincronizada");
+    return -1;
+  }
   HTTPClient http;
   http.setConnectTimeout(15000);
   http.setTimeout(15000);
@@ -295,6 +319,7 @@ int enviarHeartbeat() {
   int code = -1;
   if (http.begin(client, HEARTBEAT_URL)) {
     http.addHeader("Content-Type", "application/json");
+    http.addHeader("X-API-Key", NODE_API_KEY);
     code = http.POST(body);
     Serial.print(" HEARTBEAT -> ");
     if (code > 0) {
@@ -306,6 +331,10 @@ int enviarHeartbeat() {
       Serial.println(response);
     } else {
       Serial.println(HTTPClient::errorToString(code));
+      char tlsError[128];
+      client.lastError(tlsError, sizeof(tlsError));
+      Serial.print(" TLS detalle: ");
+      Serial.println(tlsError);
     }
     http.end();
   } else {
@@ -336,6 +365,7 @@ void setup() {
 
   // Conectar a internet
   conectarWiFi();
+  if (WiFi.status() == WL_CONNECTED) sincronizarHora();
 }
 
 void loop() {
@@ -347,6 +377,7 @@ void loop() {
     Serial.println("WiFi perdido, reconectando...");
     conectarWiFi();
   }
+  if (WiFi.status() == WL_CONNECTED && !timeSynced) sincronizarHora();
 
   // 2. Lectura de temperatura del entorno (DS18B20)
   sensors.requestTemperatures();
