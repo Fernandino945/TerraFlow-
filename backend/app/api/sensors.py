@@ -7,10 +7,17 @@ from pydantic import BaseModel
 from app.core import database as db
 from app.core import state
 from app.core.config import settings
-from app.models.schemas import AlertLevel, SensorReading, SystemStatus, SensorIngest, GatewayHeartbeat
+from app.models.schemas import SensorReading, SystemStatus, SensorIngest, ValveStatus
 from app.services import sensor_validation
 
 router = APIRouter()
+
+
+class GatewayHeartbeat(BaseModel):
+    sensor_id: Optional[str] = None
+    rssi: Optional[int] = None
+    uptime_s: Optional[int] = None
+
 
 # HU-23: diagnóstico por zona del último contacto del nodo ESP32 (se llena en /ingest).
 # Vive en memoria; la última lectura real se recupera de Mongo si el backend se reinicia.
@@ -44,43 +51,20 @@ async def get_sensor_history(zone_id: str = None, limit: int = 100):
 
 @router.post("/gateway/heartbeat")
 async def gateway_heartbeat(payload: Optional[GatewayHeartbeat] = None):
-    """Recibe el heartbeat WiFi del ESP32 o del Gateway LoRaWAN futuro."""
+    """Heartbeat del nodo. HU-25: responde el estado deseado de la válvula de su zona."""
     state.last_gateway_heartbeat = datetime.utcnow()
     origin = payload.sensor_id if payload and payload.sensor_id else "gateway"
-    desired_status = None
-    if payload and origin.startswith("sensor_"):
-        zone_id = origin.removeprefix("sensor_")
-        valve = state.valve_states.get(zone_id)
-        if valve:
-            if payload.actual_status is not None:
-                valve.actual_status = payload.actual_status
-                state.persist_valve(valve)
-            desired_status = valve.desired_status
-        diag = _node_diag.setdefault(zone_id, {"discarded_total": 0})
-        diag.update(
-            last_contact=state.last_gateway_heartbeat,
-            rssi=payload.rssi,
-            uptime_s=payload.uptime_s,
-            failsafe_active=payload.failsafe_active,
-            failure_count=payload.failure_count,
-            failure_reason=payload.failure_reason,
-        )
-    if payload and payload.failsafe_active:
-        state.add_alert(
-            AlertLevel.WARNING,
-            f"Failsafe local reportado por {origin}: "
-            f"{payload.failure_reason or 'fallos de comunicación'} "
-            f"({payload.failure_count} fallos).",
-            zone=origin.removeprefix("sensor_"),
-        )
+
+    zone_id = origin.removeprefix("sensor_")
+    valve = state.valve_states.get(zone_id)
+    failsafe = (state.suspension_reason or "").startswith("FAILSAFE")
+    valve_cmd = "open" if (valve and valve.status == ValveStatus.OPEN and not failsafe) else "closed"
+
     return {
         "status": "ok",
         "source": origin,
-        "valve_id": origin.removeprefix("sensor_") if origin.startswith("sensor_") else None,
-        "desired_status": desired_status,
-        "failsafe_active": payload.failsafe_active if payload else False,
-        "failure_count": payload.failure_count if payload else 0,
         "received_at": state.last_gateway_heartbeat,
+        "valve": valve_cmd,
     }
 
 
