@@ -1,12 +1,13 @@
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.core import database as db
 from app.core import state
 from app.core.config import settings
+from app.core.security import require_node_key
 from app.models.schemas import SensorReading, SystemStatus, SensorIngest, ValveStatus
 from app.services import sensor_validation
 
@@ -49,7 +50,7 @@ async def get_sensor_history(zone_id: str = None, limit: int = 100):
         history = [r for r in history if r.sensor_id == f"sensor_{zone_id}"]
     return history[-limit:]
 
-@router.post("/gateway/heartbeat")
+@router.post("/gateway/heartbeat", dependencies=[Depends(require_node_key)])
 async def gateway_heartbeat(payload: Optional[GatewayHeartbeat] = None):
     """Heartbeat del nodo. HU-25: responde el estado deseado de la válvula de su zona."""
     state.last_gateway_heartbeat = datetime.utcnow()
@@ -68,7 +69,7 @@ async def gateway_heartbeat(payload: Optional[GatewayHeartbeat] = None):
     }
 
 
-@router.post("/ingest")
+@router.post("/ingest", dependencies=[Depends(require_node_key)])
 async def ingest_sensor(payload: SensorIngest):
     """Recibe lecturas reales del nodo ESP32 (Wokwi o hardware físico)."""
     zone_id = payload.sensor_id.removeprefix("sensor_")

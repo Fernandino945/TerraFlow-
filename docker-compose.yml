@@ -36,6 +36,7 @@ services:
       - MONGO_DB_NAME=terraflow
       - WATCHDOG_TIMEOUT_SECONDS=90
       - FAILSAFE_VALVE_STATE=closed
+      - NODE_API_KEY=${NODE_API_KEY}
     volumes:
       - ./backend:/app
     networks:

@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
+    NODE_API_KEY: str = ""
     OPEN_METEO_BASE_URL: str = "https://api.open-meteo.com/v1"
     LATITUDE: float = -33.45  # Santiago, Chile por defecto
     LONGITUDE: float = -70.66
