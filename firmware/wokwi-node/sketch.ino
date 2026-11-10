@@ -5,20 +5,29 @@
 #include <DallasTemperature.h>
 #include <Preferences.h>
 
-// --- TUS CREDENCIALES DE WI-FI ---
+// --- CREDENCIALES DE WI-FI (completar; NO subir a Git con valores reales) ---
 const char* ssid = "Yak-3";
 const char* password = "sbgs8189";
 
 // --- BACKEND (URL del túnel Cloudflare, con la ruta completa) ---
-// ---- cloudflared tunnel --url http://localhost:80 + "URL/api/sensors/ingest
-const char* INGEST_URL = "https://breeding-validity-observer-juvenile.trycloudflare.com/api/sensors/ingest";
-const char* HEARTBEAT_URL = "https://breeding-validity-observer-juvenile.trycloudflare.com/api/sensors/gateway/heartbeat";
-const char* SENSOR_ID  = "sensor_zone_1";
-const uint8_t VALVE_PIN = 2;  // LED/relé de prueba; salida activa en bajo
-const unsigned long SEND_INTERVAL_MS = 30000;   // envío cada 30 s
-const unsigned long HEARTBEAT_INTERVAL_MS = 15000; // heartbeat cada 15 s
+// cloudflared tunnel --url http://localhost:80
+const char* INGEST_URL    = "https://sectional-thumb-concerned.ngrok-free.dev/api/sensors/ingest";
+const char* HEARTBEAT_URL = "https://sectional-thumb-concerned.ngrok-free.dev/api/sensors/gateway/heartbeat";
+const char* SENSOR_ID     = "sensor_zone_1";
+// --- VÁLVULA (relé activo en bajo) ---
+const uint8_t VALVE_PIN = 26;                                  // IN1 del módulo de relé
+const unsigned long COMM_TIMEOUT_MS = 60000;                   // HU-26: sin heartbeat válido por 60 s
+const unsigned long MAX_IRRIGATION_MS = 30UL * 60UL * 1000UL;  // HU-26: tiempo máximo de riego (30 min)
+unsigned long lastHeartbeatOk = 0;
+unsigned long irrigationStartedAt = 0;
+
+// --- INTERVALOS ---
+const unsigned long SEND_INTERVAL_MS = 30000;        // lectura cada 30 s
+const unsigned long HEARTBEAT_INTERVAL_MS = 15000;   // heartbeat cada 15 s
 unsigned long lastSend = 0;
 unsigned long lastHeartbeat = 0;
+
+// --- FAILSAFE LOCAL ---
 const uint8_t MAX_COMMUNICATION_FAILURES = 3;
 uint8_t consecutiveCommunicationFailures = 0;
 bool localFailsafeActive = false;
@@ -26,13 +35,13 @@ const char* localFailsafeReason = nullptr;
 bool valveOpen = false;
 
 // --- ASIGNACIÓN DE PINES ---
-#define ONE_WIRE_BUS 4          // Pin del sensor DS18B20 (GPIO 4)
-#define MOISTURE_PIN 34         // Pin del sensor capacitivo de humedad (GPIO 34 / A2)
+#define ONE_WIRE_BUS 4          // DS18B20 (GPIO 4)
+#define MOISTURE_PIN 34         // Sensor capacitivo (GPIO 34 / A2)
 
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
 
-// Calibración del sensor de humedad
+// --- CALIBRACIÓN DEL SENSOR DE HUMEDAD ---
 const int DEFAULT_DRY_ADC = 3100;
 const int DEFAULT_WET_ADC = 1100;
 const int CALIBRATION_SAMPLES = 32;
@@ -41,9 +50,34 @@ int valorSeco = DEFAULT_DRY_ADC;
 int valorHumedo = DEFAULT_WET_ADC;
 Preferences calibrationStorage;
 
+// =====================================================================
+// VÁLVULA
+// =====================================================================
 void setValveOutput(bool open) {
+  if (open != valveOpen) {
+    Serial.println(open ? "VALVULA -> ABIERTA" : "VALVULA -> CERRADA");
+    if (open) irrigationStartedAt = millis();
+  }
   valveOpen = open;
   digitalWrite(VALVE_PIN, open ? LOW : HIGH);
+}
+
+void activateLocalFailsafe(const char* reason) {
+  if (localFailsafeActive) return;
+  localFailsafeActive = true;
+  localFailsafeReason = reason;
+  setValveOutput(false);
+  Serial.printf("FAILSAFE local activo: %s\n", reason);
+}
+
+// Cierre local sin depender del backend: por falta de heartbeat o por tiempo máximo
+void checkLocalFailsafe() {
+  if (!valveOpen || localFailsafeActive) return;
+  if (millis() - lastHeartbeatOk > COMM_TIMEOUT_MS) {
+    activateLocalFailsafe("sin heartbeat valido por 60 s");
+  } else if (millis() - irrigationStartedAt > MAX_IRRIGATION_MS) {
+    activateLocalFailsafe("tiempo maximo de riego");
+  }
 }
 
 void applyDesiredValveState(const String& response) {
@@ -51,8 +85,12 @@ void applyDesiredValveState(const String& response) {
     setValveOutput(false);
     return;
   }
-  const bool shouldOpen = response.indexOf("\"desired_status\":\"open\"") >= 0;
-  const bool shouldClose = response.indexOf("\"desired_status\":\"closed\"") >= 0;
+  const bool shouldOpen =
+    response.indexOf("\"valve\":\"open\"") >= 0 ||
+    response.indexOf("\"desired_status\":\"open\"") >= 0;
+  const bool shouldClose =
+    response.indexOf("\"valve\":\"closed\"") >= 0 ||
+    response.indexOf("\"desired_status\":\"closed\"") >= 0;
   if (shouldOpen) {
     setValveOutput(true);
   } else if (shouldClose) {
@@ -60,6 +98,9 @@ void applyDesiredValveState(const String& response) {
   }
 }
 
+// =====================================================================
+// HUMEDAD Y CALIBRACIÓN
+// =====================================================================
 int readMoistureRaw() {
   long total = 0;
   for (int i = 0; i < CALIBRATION_SAMPLES; i++) {
@@ -144,6 +185,9 @@ void handleSerialCommand() {
   }
 }
 
+// =====================================================================
+// WIFI
+// =====================================================================
 void conectarWiFi() {
   Serial.print("Conectando a ");
   Serial.println(ssid);
@@ -155,6 +199,7 @@ void conectarWiFi() {
   while (WiFi.status() != WL_CONNECTED && intentos < 30) {
     delay(500);
     Serial.print(".");
+    checkLocalFailsafe();   // la válvula se cierra aunque no haya red
     intentos++;
   }
 
@@ -170,6 +215,9 @@ void conectarWiFi() {
   }
 }
 
+// =====================================================================
+// HTTP
+// =====================================================================
 // Envía la lectura al backend. Devuelve el código HTTP (o <0 si falló).
 int enviarLectura(float tempC, int porcentajeHumedad, int valorHumedadRaw) {
   if (WiFi.status() != WL_CONNECTED) return -1;
@@ -183,7 +231,7 @@ int enviarLectura(float tempC, int porcentajeHumedad, int valorHumedadRaw) {
   Serial.println(body);
 
   WiFiClientSecure client;
-  client.setInsecure();            // sin validar certificado (suficiente para pruebas)
+  client.setInsecure();            // sin validar certificado (se corrige en HU-27)
   HTTPClient http;
   http.setConnectTimeout(15000);
   http.setTimeout(15000);
@@ -207,6 +255,7 @@ int enviarLectura(float tempC, int porcentajeHumedad, int valorHumedadRaw) {
   return code;
 }
 
+// Solo el heartbeat cuenta para el failsafe: es el canal que lleva la orden de la válvula
 void recordCommunicationResult(int code, const char* reason) {
   if (code >= 200 && code < 300) {
     consecutiveCommunicationFailures = 0;
@@ -217,11 +266,8 @@ void recordCommunicationResult(int code, const char* reason) {
     consecutiveCommunicationFailures++;
   }
   if (consecutiveCommunicationFailures >= MAX_COMMUNICATION_FAILURES) {
-    localFailsafeActive = true;
-    localFailsafeReason = reason;
-    setValveOutput(false);
-    Serial.printf("FAILSAFE local activo: %s (%u fallos)\n",
-      reason, consecutiveCommunicationFailures);
+    activateLocalFailsafe(reason);
+    Serial.printf("(%u fallos consecutivos)\n", consecutiveCommunicationFailures);
   }
 }
 
@@ -253,6 +299,7 @@ int enviarHeartbeat() {
     Serial.print(" HEARTBEAT -> ");
     if (code > 0) {
       const String response = http.getString();
+      if (code >= 200 && code < 300) lastHeartbeatOk = millis();
       applyDesiredValveState(response);
       Serial.print(code);
       Serial.print(" -> ");
@@ -267,12 +314,18 @@ int enviarHeartbeat() {
   return code;
 }
 
+// =====================================================================
+// SETUP / LOOP
+// =====================================================================
 void setup() {
   Serial.begin(115200);
   delay(1000);
 
+  // Relé apagado ANTES de configurar el pin como salida (sin pulso al arrancar)
+  digitalWrite(VALVE_PIN, HIGH);
   pinMode(VALVE_PIN, OUTPUT);
   setValveOutput(false);
+  lastHeartbeatOk = millis();
 
   // Inicializar sensores
   sensors.begin();
@@ -287,18 +340,19 @@ void setup() {
 
 void loop() {
   handleSerialCommand();
+  checkLocalFailsafe();
 
-  // 1. Verificar y mantener la conexión Wi-Fi (Reconexión automática)
+  // 1. Verificar y mantener la conexión Wi-Fi (reconexión automática)
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("WiFi perdido, reconectando...");
     conectarWiFi();
   }
 
-  // 2. Lectura de Temperatura del Entorno (DS18B20)
+  // 2. Lectura de temperatura del entorno (DS18B20)
   sensors.requestTemperatures();
   float tempC = sensors.getTempCByIndex(0);
 
-  // 3. Lectura de Humedad del Suelo
+  // 3. Lectura de humedad del suelo
   int valorHumedadRaw = readMoistureRaw();
   int porcentajeHumedad = map(valorHumedadRaw, valorSeco, valorHumedo, 0, 100);
   porcentajeHumedad = constrain(porcentajeHumedad, 0, 100);
@@ -321,16 +375,17 @@ void loop() {
   Serial.print(valorHumedadRaw);
   Serial.println(")");
 
-  Serial.println(" Estado Wi-Fi: Conectado (IP: " + WiFi.localIP().toString() + ")");
+  Serial.println(" Estado Wi-Fi: " + String(WiFi.status() == WL_CONNECTED ? "Conectado (IP: " + WiFi.localIP().toString() + ")" : "Desconectado"));
+  Serial.printf(" Valvula: %s\n", valveOpen ? "ABIERTA" : "CERRADA");
 
-  // 5. Enviar al dashboard cada 30 s (solo si el DS18B20 lee bien)
+  // 5. Enviar al dashboard cada 30 s (solo si el DS18B20 lee bien).
+  //    El resultado de las lecturas NO cuenta para el failsafe (un 422 no es una falla de red).
   if (tempOk && (lastSend == 0 || millis() - lastSend >= SEND_INTERVAL_MS)) {
     lastSend = millis();
-    const int code = enviarLectura(tempC, porcentajeHumedad, valorHumedadRaw);
-    recordCommunicationResult(code, "fallo al enviar lectura");
+    enviarLectura(tempC, porcentajeHumedad, valorHumedadRaw);
   }
 
-  // Mantener el heartbeat independiente de las lecturas de sensores.
+  // 6. Heartbeat independiente de las lecturas; recibe la orden de la válvula
   if (lastHeartbeat == 0 || millis() - lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
     lastHeartbeat = millis();
     const int code = enviarHeartbeat();
