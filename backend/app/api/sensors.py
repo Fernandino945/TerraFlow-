@@ -2,22 +2,14 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-
 from app.core import database as db
 from app.core import state
 from app.core.config import settings
 from app.core.security import require_node_key
-from app.models.schemas import SensorReading, SystemStatus, SensorIngest, ValveStatus
+from app.models.schemas import AlertLevel, GatewayHeartbeat, SensorReading, SystemStatus, SensorIngest, ValveStatus
 from app.services import sensor_validation
 
 router = APIRouter()
-
-
-class GatewayHeartbeat(BaseModel):
-    sensor_id: Optional[str] = None
-    rssi: Optional[int] = None
-    uptime_s: Optional[int] = None
 
 
 # HU-23: diagnóstico por zona del último contacto del nodo ESP32 (se llena en /ingest).
@@ -59,13 +51,37 @@ async def gateway_heartbeat(payload: Optional[GatewayHeartbeat] = None):
     zone_id = origin.removeprefix("sensor_")
     valve = state.valve_states.get(zone_id)
     failsafe = (state.suspension_reason or "").startswith("FAILSAFE")
-    valve_cmd = "open" if (valve and valve.status == ValveStatus.OPEN and not failsafe) else "closed"
+    local_failsafe = bool(payload and payload.failsafe_active)
+    valve_cmd = "open" if (valve and valve.status == ValveStatus.OPEN and not failsafe and not local_failsafe) else "closed"
+
+    if payload and payload.sensor_id:
+        diag = _node_diag.setdefault(zone_id, {"discarded_total": 0})
+        diag.update(
+            last_contact=state.last_gateway_heartbeat,
+            rssi=payload.rssi,
+            uptime_s=payload.uptime_s,
+            failsafe_active=payload.failsafe_active,
+            failure_count=payload.failure_count,
+            failure_reason=payload.failure_reason,
+        )
+        if payload.failsafe_active and valve and valve.status != ValveStatus.CLOSED:
+            valve.status = ValveStatus.CLOSED
+            valve.desired_status = ValveStatus.CLOSED
+            valve.actual_status = ValveStatus.CLOSED
+            valve.last_changed = datetime.utcnow()
+            state.persist_valve(valve)
+            state.add_alert(
+                AlertLevel.WARNING,
+                f"Failsafe local del nodo activado: {payload.failure_reason or 'motivo no informado'}",
+                zone=valve.zone_name,
+            )
 
     return {
         "status": "ok",
         "source": origin,
         "received_at": state.last_gateway_heartbeat,
         "valve": valve_cmd,
+        "desired_status": valve_cmd,
     }
 
 

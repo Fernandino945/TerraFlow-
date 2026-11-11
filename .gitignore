@@ -7,3 +7,6 @@ firmware/**/root_ca.h
 .DS_Store
 dist/
 .vite/
+.coverage
+.pytest_cache/
+.ruff_cache/

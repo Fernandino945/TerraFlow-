@@ -1,0 +1,6 @@
+line-length = 120
+target-version = "py311"
+
+[lint]
+# E9: errores de sintaxis, F: pyflakes (imports sin usar, nombres no definidos), W: espacios y saltos de línea
+select = ["E9", "F", "W"]

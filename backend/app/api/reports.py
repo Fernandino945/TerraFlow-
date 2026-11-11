@@ -10,8 +10,6 @@ router = APIRouter()
 async def get_monthly_report():
     """Genera reporte mensual de consumo hídrico."""
     # En producción: consultar base de datos histórica
-    open_valves = sum(1 for v in state.valve_states.values() if v.status.value == "open")
-    
     zones_data = {}
     for zone_id, reading in state.sensor_readings.items():
         zones_data[zone_id] = {

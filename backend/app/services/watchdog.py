@@ -22,7 +22,7 @@ def check_watchdog():
         _trigger_failsafe(elapsed)
     elif state.suspension_reason and state.suspension_reason.startswith("FAILSAFE"):
         state.irrigation_suspended = False
-        state.suspension_reason = "None"
+        state.suspension_reason = ""
         state.add_alert(AlertLevel.INFO, "Heartbeat del Gateway restablecido. Failsafe desactivado.")
 
 
