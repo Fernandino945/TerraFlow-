@@ -224,7 +224,7 @@ void sincronizarHora() {
 
 bool prepararTls(WiFiClientSecure& client) {
   if (!timeSynced) return false;
-  client.setInsecure();
+  client.setCACert(ROOT_CA_PEM);
   return true;
 }
 

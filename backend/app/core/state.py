@@ -9,10 +9,10 @@ import random
 import uuid
 import asyncio
 import math
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, List
 from app.models.schemas import (
-    SensorReading, ValveState, ValveStatus, Alert, AlertLevel,
+    SensorReading, ValveState, Alert, AlertLevel,
     TrafficLightStatus, HumidityThresholds
 )
 from app.core import database as db

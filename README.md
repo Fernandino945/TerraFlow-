@@ -192,6 +192,9 @@ Cada punto se calcula con 32 muestras promediadas. El nodo rechaza una calibraci
 inválida y sigue usando los valores anteriores. La lectura cruda y el porcentaje
 calibrado continúan enviándose al endpoint `/api/sensors/ingest`.
 
+Para conectar el ESP32, cargar el firmware y ejecutar la prueba física de heartbeat,
+válvula y failsafe, consulta [la guía de prueba de hardware](firmware/wokwi-node/HARDWARE-TEST.md).
+
 ---
 
 ## 🛡️ Failsafe local del nodo ESP32

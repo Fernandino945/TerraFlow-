@@ -6,7 +6,7 @@ para no perder el estado ante una caída del backend.
 """
 from datetime import datetime
 from app.core import state
-from app.models.schemas import ValveStatus, AlertLevel, TrafficLightStatus
+from app.models.schemas import ValveStatus, AlertLevel
 from app.core.config import settings
 
 _last_weather: dict = {}
