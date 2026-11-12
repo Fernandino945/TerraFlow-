@@ -202,6 +202,19 @@ def add_alert(level: AlertLevel, message: str, zone: str = None):
 def persist_valve(valve: ValveState):
     """Guarda el estado de una válvula en Mongo (llamar tras cualquier cambio)."""
     _safe_create_task(db.save_valve_state(valve.model_dump()))
+    last_status = getattr(persist_valve, "_last_status", None)
+    if last_status is None:
+        last_status = {}
+        persist_valve._last_status = last_status
+    previous_status = last_status.get(valve.valve_id)
+    if previous_status != valve.status:
+        _safe_create_task(db.save_irrigation_event({
+            "valve_id": valve.valve_id,
+            "zone_name": valve.zone_name,
+            "event_type": valve.status.value,
+            "timestamp": valve.last_changed,
+        }))
+        last_status[valve.valve_id] = valve.status
 
 
 def persist_threshold(th: HumidityThresholds):

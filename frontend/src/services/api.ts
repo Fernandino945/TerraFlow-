@@ -67,7 +67,12 @@ export interface MonthlyReport {
   month: string
   total_irrigation_hours: number
   estimated_water_liters: number
+  used_water_liters: number
+  traditional_reference_liters: number
   savings_vs_traditional_pct: number
+  period_start: string
+  period_end: string
+  calibrated_flow_lpm: number
   avg_humidity: number
   alerts_count: number
   zones_data: Record<string, { zone_name: string; avg_humidity: number; irrigation_hours: number }>

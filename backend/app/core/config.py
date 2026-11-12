@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     # MongoDB
     MONGO_URI: str = "mongodb://mongo:27017"
     MONGO_DB_NAME: str = "terraflow"
+    # Caudales en litros por minuto. El caudal calibrado puede sustituirse
+    # por la lectura del YF-S201 cuando el caudalímetro esté disponible.
+    CALIBRATED_FLOW_LPM: float = 7.5
+    TRADITIONAL_FLOW_LPM: float = 12.0
 
     # Watchdog / mitigación de riesgo técnico
     WATCHDOG_TIMEOUT_SECONDS: int = 90  # si no hay heartbeat en este lapso, failsafe cierra válvulas
