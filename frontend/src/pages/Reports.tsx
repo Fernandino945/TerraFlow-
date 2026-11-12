@@ -25,6 +25,11 @@ export const Reports: React.FC = () => {
     horas: z.irrigation_hours,
     humedad: z.avg_humidity,
   }))
+  const waterEfficiencyData = [{
+    name: 'Periodo',
+    usado: report.used_water_liters,
+    tradicional: report.traditional_reference_liters,
+  }]
 
   return (
     <div className="flex-1 overflow-auto p-6">
@@ -77,6 +82,54 @@ export const Reports: React.FC = () => {
       </div>
 
       <div className="grid gap-6" style={{ gridTemplateColumns: '1fr 1fr' }}>
+        {/* Water efficiency panel (HU-34) */}
+        <div className="card p-5 col-span-2">
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <div className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
+                Eficiencia hídrica
+              </div>
+              <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                Litros usados vs. referencia tradicional · caudal calibrado {report.calibrated_flow_lpm.toFixed(1)} L/min
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="mono text-xl font-bold" style={{ color: '#4ade80' }}>
+                {report.savings_vs_traditional_pct.toFixed(1)}%
+              </div>
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>ahorro</div>
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={waterEfficiencyData} margin={{ top: 5, right: 5, left: -10, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#2a3823" />
+              <XAxis dataKey="name" tick={{ fill: '#7a9470', fontSize: 10 }} tickLine={false} />
+              <YAxis tick={{ fill: '#7a9470', fontSize: 10 }} tickLine={false} />
+              <Tooltip
+                formatter={(value: number) => [`${value.toLocaleString('es-CL')} L`, '']}
+                contentStyle={{ background: '#171e13', border: '1px solid #2a3823', borderRadius: 8, fontSize: 12 }}
+                labelStyle={{ color: '#e8f0e2' }}
+              />
+              <Bar dataKey="usado" name="Usado" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="tradicional" name="Tradicional" fill="#7a9470" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+          <div className="grid grid-cols-2 gap-3 mt-2 text-center">
+            <div className="rounded-lg p-2" style={{ background: 'rgba(14,165,233,0.08)' }}>
+              <div className="mono font-semibold" style={{ color: '#0ea5e9' }}>
+                {report.used_water_liters.toLocaleString('es-CL')} L
+              </div>
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Litros usados</div>
+            </div>
+            <div className="rounded-lg p-2" style={{ background: 'rgba(122,148,112,0.08)' }}>
+              <div className="mono font-semibold" style={{ color: '#a3b99a' }}>
+                {report.traditional_reference_liters.toLocaleString('es-CL')} L
+              </div>
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Referencia tradicional</div>
+            </div>
+          </div>
+        </div>
+
         {/* Irrigation hours by zone */}
         <div className="card p-5">
           <div className="font-semibold text-sm mb-4" style={{ color: 'var(--text-primary)' }}>

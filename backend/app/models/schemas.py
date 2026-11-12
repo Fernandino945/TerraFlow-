@@ -109,7 +109,12 @@ class MonthlyReport(BaseModel):
     month: str
     total_irrigation_hours: float
     estimated_water_liters: float
+    used_water_liters: float
+    traditional_reference_liters: float
     savings_vs_traditional_pct: float
+    period_start: datetime
+    period_end: datetime
+    calibrated_flow_lpm: float
     avg_humidity: float
     alerts_count: int
     zones_data: dict

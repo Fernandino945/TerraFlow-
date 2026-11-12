@@ -23,6 +23,7 @@ def entorno_aislado(monkeypatch):
         "save_alert",
         "save_threshold",
         "log_system_event",
+        "save_irrigation_event",
     ):
         monkeypatch.setattr(db, name, _noop)
     monkeypatch.setattr(settings, "NODE_API_KEY", TEST_KEY, raising=False)

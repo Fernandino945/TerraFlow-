@@ -42,6 +42,9 @@ def user_location_collection():
 def system_events_collection():
     return db["system_events"]  # watchdog / failsafe / caídas
 
+def irrigation_events_collection():
+    return db["irrigation_events"]
+
 
 # ---------- Sensores: historial ----------
 async def save_sensor_reading(reading: dict):
@@ -130,10 +133,21 @@ async def get_system_events(limit: int = 50):
     return await cursor.to_list(length=limit)
 
 
+async def save_irrigation_event(event: dict):
+    await irrigation_events_collection().insert_one(event)
+
+
+async def get_irrigation_events(start: datetime, end: datetime):
+    cursor = irrigation_events_collection().find(
+        {"timestamp": {"$gte": start, "$lt": end}}
+    ).sort("timestamp", 1)
+    return await cursor.to_list(length=10000)
+
+
 # ---------- Explorador genérico (visor visual de la base de datos) ----------
 KNOWN_COLLECTIONS = [
     "sensor_history", "valve_states", "thresholds",
-    "alerts", "user_location", "system_events",
+    "alerts", "user_location", "system_events", "irrigation_events",
 ]
 
 async def list_collections_with_counts():
