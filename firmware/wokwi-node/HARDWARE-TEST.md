@@ -42,10 +42,30 @@ o una carga de baja tensión y confirma que el relé es activo en bajo.
 5. Abre la válvula desde el dashboard y confirma en el siguiente heartbeat
    `desired_status:"open"` y la activación del relé.
 6. Cierra la válvula desde el dashboard y confirma `desired_status:"closed"`.
-7. Desconecta temporalmente el backend o bloquea su acceso durante tres
+7. Con el relé aún sin la válvula conectada, ejecuta `s` y confirma que el relé
+   se activa y que, aproximadamente 10 segundos después, aparece
+   `Prueba Serial finalizada: cierre automatico correcto.`. Usa `p` para consultar
+   el estado y `c` para cerrar manualmente en cualquier momento.
+8. Repite la prueba `s` tres veces, dejando el relé reposar unos segundos entre
+   ciclos. No conectes todavía la fuente de 12 V ni agua durante esta fase.
+9. Después de validar el relé sin carga, conecta la potencia de 12 V con la
+   alimentación desconectada y verifica nuevamente polaridad, fusible, COM/NO
+   y el diodo antes de energizar. Mantén la válvula sin manguera para la primera
+   prueba eléctrica; confirma solo el clic mecánico.
+10. Solo después conecta el agua y prueba el flujo. Ten la fuente a mano para
+    desconectarla y detén la prueba si la válvula no abre, el relé se calienta
+    o el fusible actúa.
+11. Desconecta temporalmente el backend o bloquea su acceso durante tres
    heartbeats. El nodo debe imprimir `FAILSAFE local activo` y desactivar el relé.
-8. Vuelve a conectar el backend. El nodo debe reportar el failsafe y reiniciarse;
+12. Vuelve a conectar el backend. El nodo debe reportar el failsafe y reiniciarse;
    después debe volver a mostrar `HEARTBEAT -> 200`.
+
+### Comandos de prueba por Serial
+
+- `o`: abre manualmente y cancela el temporizador de prueba.
+- `c`: cierra la válvula y cancela el temporizador de prueba.
+- `p`: muestra estado de válvula, prueba Serial y failsafe.
+- `s`: abre y fuerza el cierre automático a los 10 segundos.
 
 ## Wokwi
 
