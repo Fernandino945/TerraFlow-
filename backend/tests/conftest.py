@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.core import database as db, state
 from app.core.config import settings
+from app.api import sensors as sensors_api
 from app.main import app
 from app.models.schemas import HumidityThresholds, ValveState
 
@@ -33,6 +34,7 @@ def entorno_aislado(monkeypatch):
     state.irrigation_suspended = False
     state.suspension_reason = ""
     state.last_gateway_heartbeat = datetime.utcnow()
+    sensors_api._node_diag.clear()
     for zone in state.ZONES:
         state.valve_states[zone["id"]] = ValveState(valve_id=zone["id"], zone_name=zone["name"])
         state.thresholds[zone["id"]] = HumidityThresholds(

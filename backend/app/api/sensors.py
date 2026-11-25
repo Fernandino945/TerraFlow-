@@ -56,6 +56,7 @@ async def gateway_heartbeat(payload: Optional[GatewayHeartbeat] = None):
 
     if payload and payload.sensor_id:
         diag = _node_diag.setdefault(zone_id, {"discarded_total": 0})
+        previous_failsafe = diag.get("failsafe_active", False)
         diag.update(
             last_contact=state.last_gateway_heartbeat,
             rssi=payload.rssi,
@@ -64,17 +65,27 @@ async def gateway_heartbeat(payload: Optional[GatewayHeartbeat] = None):
             failure_count=payload.failure_count,
             failure_reason=payload.failure_reason,
         )
-        if payload.failsafe_active and valve and valve.status != ValveStatus.CLOSED:
-            valve.status = ValveStatus.CLOSED
-            valve.desired_status = ValveStatus.CLOSED
-            valve.actual_status = ValveStatus.CLOSED
-            valve.last_changed = datetime.utcnow()
-            state.persist_valve(valve)
-            state.add_alert(
-                AlertLevel.WARNING,
-                f"Failsafe local del nodo activado: {payload.failure_reason or 'motivo no informado'}",
-                zone=valve.zone_name,
-            )
+        if valve:
+            changed = False
+            if payload.actual_status is not None and valve.actual_status != payload.actual_status:
+                valve.actual_status = payload.actual_status
+                changed = True
+
+            if payload.failsafe_active:
+                if valve.status != ValveStatus.CLOSED or valve.desired_status != ValveStatus.CLOSED:
+                    valve.status = ValveStatus.CLOSED
+                    valve.desired_status = ValveStatus.CLOSED
+                    valve.last_changed = datetime.utcnow()
+                    changed = True
+                if not previous_failsafe:
+                    state.add_alert(
+                        AlertLevel.WARNING,
+                        f"Failsafe local del nodo activado: {payload.failure_reason or 'motivo no informado'}",
+                        zone=valve.zone_name,
+                    )
+
+            if changed:
+                state.persist_valve(valve)
 
     return {
         "status": "ok",

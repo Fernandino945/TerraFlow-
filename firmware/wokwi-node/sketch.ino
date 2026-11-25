@@ -8,18 +8,22 @@
 #include "root_ca.h"
 #include <time.h>
 
+const char* INGEST_URL = BACKEND_BASE "/api/sensors/ingest";
+const char* HEARTBEAT_URL = BACKEND_BASE "/api/sensors/gateway/heartbeat";
+
 const char* ssid = WIFI_SSID;
 const char* password = WIFI_PASS;
-const char* INGEST_URL    = BACKEND_BASE "/api/sensors/ingest";
-const char* HEARTBEAT_URL = BACKEND_BASE "/api/sensors/gateway/heartbeat";
 const char* SENSOR_ID     = "sensor_zone_1";
 bool timeSynced = false;
 // --- VÁLVULA (relé activo en bajo) ---
 const uint8_t VALVE_PIN = 26;                                  // IN1 del módulo de relé
 const unsigned long COMM_TIMEOUT_MS = 60000;                   // HU-26: sin heartbeat válido por 60 s
 const unsigned long MAX_IRRIGATION_MS = 30UL * 60UL * 1000UL;  // HU-26: tiempo máximo de riego (30 min)
+const unsigned long SERIAL_TEST_MS = 10UL * 1000UL;             // Prueba local de banco
 unsigned long lastHeartbeatOk = 0;
 unsigned long irrigationStartedAt = 0;
+unsigned long serialTestStartedAt = 0;
+bool serialTestActive = false;
 
 // --- INTERVALOS ---
 const unsigned long SEND_INTERVAL_MS = 30000;        // lectura cada 30 s
@@ -62,17 +66,70 @@ void setValveOutput(bool open) {
   digitalWrite(VALVE_PIN, open ? LOW : HIGH);
 }
 
+void printValveStatus() {
+  Serial.printf(
+    "Estado valvula: %s | prueba Serial: %s | failsafe: %s\n",
+    valveOpen ? "ABIERTA" : "CERRADA",
+    serialTestActive ? "ACTIVA" : "inactiva",
+    localFailsafeActive ? "ACTIVO" : "inactivo"
+  );
+}
+
+void startSerialValveTest() {
+  if (localFailsafeActive) {
+    Serial.println("No se puede iniciar: failsafe local activo; reinicia el ESP32.");
+    return;
+  }
+  serialTestActive = true;
+  serialTestStartedAt = millis();
+  setValveOutput(true);
+  Serial.println("Prueba Serial iniciada: cierre automatico en 10 segundos.");
+}
+
+void handleSerialValveCommand(const String& command) {
+  if (command == "o") {
+    serialTestActive = false;
+    setValveOutput(true);
+    Serial.println("Comando o: valvula ABIERTA (modo manual).");
+  } else if (command == "c") {
+    serialTestActive = false;
+    setValveOutput(false);
+    Serial.println("Comando c: valvula CERRADA.");
+  } else if (command == "p") {
+    printValveStatus();
+  } else if (command == "s") {
+    startSerialValveTest();
+  } else if (command == "r") {
+    localFailsafeActive = false;
+    localFailsafeReason = nullptr;
+    consecutiveCommunicationFailures = 0;
+    lastHeartbeatOk = millis();
+    Serial.println("Failsafe local reiniciado manualmente.");
+  } else {
+    Serial.println("Comando no reconocido. Usa: o=abrir, c=cerrar, p=estado, s=prueba 10 s, r=reiniciar failsafe.");
+  }
+}
+
+void checkSerialValveTest() {
+  if (serialTestActive && millis() - serialTestStartedAt >= SERIAL_TEST_MS) {
+    serialTestActive = false;
+    setValveOutput(false);
+    Serial.println("Prueba Serial finalizada: cierre automatico correcto.");
+  }
+}
+
 void activateLocalFailsafe(const char* reason) {
   if (localFailsafeActive) return;
   localFailsafeActive = true;
   localFailsafeReason = reason;
+  serialTestActive = false;
   setValveOutput(false);
   Serial.printf("FAILSAFE local activo: %s\n", reason);
 }
 
 // Cierre local sin depender del backend: por falta de heartbeat o por tiempo máximo
 void checkLocalFailsafe() {
-  if (!valveOpen || localFailsafeActive) return;
+  if (!valveOpen || localFailsafeActive || serialTestActive) return;
   if (millis() - lastHeartbeatOk > COMM_TIMEOUT_MS) {
     activateLocalFailsafe("sin heartbeat valido por 60 s");
   } else if (millis() - irrigationStartedAt > MAX_IRRIGATION_MS) {
@@ -85,6 +142,7 @@ void applyDesiredValveState(const String& response) {
     setValveOutput(false);
     return;
   }
+  if (serialTestActive) return;
   const bool shouldOpen =
     response.indexOf("\"valve\":\"open\"") >= 0 ||
     response.indexOf("\"desired_status\":\"open\"") >= 0;
@@ -149,6 +207,7 @@ void saveCalibration(int dryAdc, int wetAdc) {
 }
 
 void printCalibrationHelp() {
+  Serial.println("Comandos de valvula: o=abrir, c=cerrar, p=estado, s=prueba 10 s, r=reiniciar failsafe.");
   Serial.println("Comandos de calibracion:");
   Serial.println("  cal dry   - coloca el sensor en suelo seco y toma muestras");
   Serial.println("  cal wet   - coloca el sensor en suelo humedo y toma muestras");
@@ -167,7 +226,9 @@ void handleSerialCommand() {
   command.trim();
   command.toLowerCase();
 
-  if (command == "cal dry" || command == "cal wet") {
+  if (command == "o" || command == "c" || command == "p" || command == "s" || command == "r") {
+    handleSerialValveCommand(command);
+  } else if (command == "cal dry" || command == "cal wet") {
     const bool drySample = command == "cal dry";
     Serial.printf("Muestreando punto %s (%d lecturas)...\n",
       drySample ? "seco" : "humedo", CALIBRATION_SAMPLES);
@@ -181,7 +242,7 @@ void handleSerialCommand() {
   } else if (command == "cal help") {
     printCalibrationHelp();
   } else {
-    Serial.println("Comando no reconocido. Escribe 'cal help'.");
+    Serial.println("Comandos: o, c, p, s; calibracion: cal help.");
   }
 }
 
@@ -192,6 +253,8 @@ void conectarWiFi() {
   Serial.print("Conectando a ");
   Serial.println(ssid);
 
+  WiFi.disconnect(false, false);
+  delay(500);
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
 
@@ -370,7 +433,16 @@ void setup() {
 
 void loop() {
   handleSerialCommand();
+  checkSerialValveTest();
   checkLocalFailsafe();
+
+  // Mantener Serial responsivo sin bloquear el failsafe ni la prueba local.
+  static unsigned long lastCycle = 0;
+  if (lastCycle != 0 && millis() - lastCycle < 5000) {
+    delay(20);
+    return;
+  }
+  lastCycle = millis();
 
   // 1. Verificar y mantener la conexión Wi-Fi (reconexión automática)
   if (WiFi.status() != WL_CONNECTED) {
@@ -429,6 +501,4 @@ void loop() {
     }
   }
 
-  // Esperar 5 segundos antes de la siguiente lectura
-  delay(5000);
 }
