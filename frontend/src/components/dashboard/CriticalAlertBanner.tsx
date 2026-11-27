@@ -7,15 +7,12 @@ export const CriticalAlertBanner: React.FC<{ alerts: Alert[] }> = ({ alerts }) =
   if (critical.length === 0) return null
 
   return (
-    <div className="rounded-xl p-4 mb-6 animate-pulse"
-         style={{ background: 'rgba(239,68,68,0.15)', border: '2px solid #ef4444' }}>
+    <div className="tf-critical-banner" role="alert">
       <div className="flex items-center gap-2 mb-2">
-        <AlertOctagon size={20} color="#ef4444" />
-        <span className="font-bold text-lg" style={{ color: '#ef4444' }}>Alerta Crítica</span>
+        <AlertOctagon size={20} aria-hidden="true" />
+        <strong className="font-bold text-lg">Alerta crítica · atención inmediata</strong>
       </div>
-      {critical.map(a => (
-        <div key={a.alert_id} className="text-sm" style={{ color: '#fca5a5' }}>{a.message}</div>
-      ))}
+      {critical.map(alert => <div key={alert.alert_id} className="text-sm">{alert.message}</div>)}
     </div>
   )
 }

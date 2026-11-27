@@ -156,6 +156,37 @@ Edita `docker-compose.yml` para personalizar:
 | `MONGO_DB_NAME`               | `terraflow`             | Nombre de la base de datos                |
 | `WATCHDOG_TIMEOUT_SECONDS`    | `90`                    | Segundos sin heartbeat antes del failsafe |
 | `FAILSAFE_VALVE_STATE`        | `closed`                | Estado seguro forzado ante caída          |
+| `NODE_API_KEY`                | requerido               | Clave compartida entre el backend y el nodo ESP32 |
+
+## 🌐 Acceso remoto seguro con ngrok
+
+Para acceder al dashboard desde internet y recibir telemetría del ESP32:
+
+1. Copia `.env.example` a `.env` y define una clave aleatoria en `NODE_API_KEY`.
+   Usa exactamente la misma clave en `NODE_API_KEY` dentro de
+   `firmware/wokwi-node/secrets.h`. Ambos archivos contienen secretos y no deben
+   agregarse al repositorio.
+2. Inicia los servicios con `docker compose up -d --build`.
+3. Configura ngrok una vez con tu token privado:
+
+   ```powershell
+   ngrok config add-authtoken "TU_TOKEN_NGROK"
+   ```
+
+4. Desde la raíz del proyecto, inicia el túnel con la política del repositorio:
+
+   ```powershell
+   ngrok http 80 --traffic-policy-file .\ngrok-policy.yml
+   ```
+
+5. Copia la URL HTTPS que muestra ngrok en `BACKEND_BASE` de
+   `firmware/wokwi-node/secrets.h` (sin `/` al final) y vuelve a cargar el
+   firmware. Si ngrok asigna otra URL, actualízala también en el firmware.
+
+La política permite las consultas del dashboard y únicamente los `POST` de
+`/api/sensors/ingest` y `/api/sensors/gateway/heartbeat`. El backend exige
+`X-API-Key` en esas rutas; los comandos de válvulas y demás operaciones de
+escritura se bloquean desde el túnel.
 
 ---
 

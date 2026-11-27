@@ -87,6 +87,7 @@ export interface HumidityThresholds {
   warning_low: number
   warning_high: number
   critical_high: number
+  moisture_level?: number | null
 }
 
 export type PhenologyProfiles = Record<string, Record<string, {
@@ -102,8 +103,37 @@ export const fetchWeather = () => api.get<WeatherSummary>('/weather/forecast').t
 export const fetchAlerts = () => api.get<Alert[]>('/alerts/').then(r => r.data)
 export const fetchSensorHistory = (zoneId: string, limit = 60) =>
   api.get<SensorReading[]>(`/sensors/history?zone_id=${zoneId}&limit=${limit}`).then(r => r.data)
-export const fetchMonthlyReport = () => api.get<MonthlyReport>('/reports/monthly').then(r => r.data)
-export const fetchThresholds = () => api.get<HumidityThresholds[]>('/alerts/thresholds').then(r => r.data)
+export const fetchMonthlyReport = (periodDays?: 7 | 30) => {
+  const params = periodDays ? {
+    start: new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000).toISOString(),
+    end: new Date().toISOString(),
+  } : undefined
+  return api.get<MonthlyReport>('/reports/monthly', { params }).then(r => r.data)
+}
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const normalizeThresholds = (payload: unknown): HumidityThresholds[] => {
+  if (Array.isArray(payload)) return payload as HumidityThresholds[]
+  if (!isRecord(payload)) return []
+
+  const collection = payload.thresholds ?? payload.data
+  if (collection !== undefined) return normalizeThresholds(collection)
+  if (typeof payload.zone_id === 'string') return [payload as unknown as HumidityThresholds]
+
+  return Object.entries(payload).flatMap(([zoneId, value]) => {
+    if (!isRecord(value)) return []
+    return [{
+      ...value,
+      zone_id: typeof value.zone_id === 'string' ? value.zone_id : zoneId,
+    } as unknown as HumidityThresholds]
+  })
+}
+
+export const fetchThresholds = async (): Promise<HumidityThresholds[]> => {
+  const { data } = await api.get<unknown>('/alerts/thresholds')
+  return normalizeThresholds(data)
+}
 
 export const commandValve = (valve_id: string, action: 'open' | 'close', reason = 'manual') =>
   api.post<ValveState>('/valves/command', { valve_id, action, reason }).then(r => r.data)
@@ -124,6 +154,37 @@ export const applyPhenologyProfile = (zone_id: string, crop_type: string, phase:
   api.post<HumidityThresholds>(`/alerts/thresholds/${zone_id}/apply-profile`, null, {
     params: { crop_type, phase },
   }).then(r => r.data)
+
+export interface MoistureLevel {
+  level: number
+  label: string
+  critical_low: number
+  warning_low: number
+  warning_high: number
+  critical_high: number
+}
+
+export const fetchMoistureLevels = () =>
+  api.get<MoistureLevel[]>('/alerts/moisture-levels').then(r => r.data)
+
+export const applyMoistureLevel = (zone_id: string, level: number) =>
+  api.post<HumidityThresholds>(`/alerts/thresholds/${zone_id}/moisture-level`, null, {
+    params: { level },
+  }).then(r => r.data)
+
+export interface IrrigationSchedule {
+  enabled: boolean
+  start: string
+  end: string
+  timezone: string
+  allowed_now: boolean
+}
+
+export const fetchIrrigationSchedule = () =>
+  api.get<IrrigationSchedule>('/irrigation/schedule').then(r => r.data)
+
+export const updateIrrigationSchedule = (data: Pick<IrrigationSchedule, 'enabled' | 'start' | 'end'>) =>
+  api.put<IrrigationSchedule>('/irrigation/schedule', data).then(r => r.data)
 
 export const refreshWeather = () =>
   api.post('/weather/refresh').then(r => r.data)

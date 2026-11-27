@@ -5,6 +5,8 @@ import {
   fetchUserLocation, updateUserLocation, UserLocation,
   fetchSystemEvents, SystemEvent,
 } from '../services/api'
+import { IrrigationScheduleSection } from '../components/settings/IrrigationScheduleSection'
+import { WaterPerHectare } from '../components/settings/WaterPerHectare'
 import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
 
@@ -128,6 +130,10 @@ export const Settings: React.FC = () => {
             meteorológico real de Open-Meteo específico para tu zona.
           </p>
         </Section>
+
+        <IrrigationScheduleSection />
+
+        <WaterPerHectare />
 
         {/* Climate thresholds */}
         <Section icon={<Thermometer size={15} style={{ color: '#f59e0b' }} />} title="Umbrales Climáticos">
