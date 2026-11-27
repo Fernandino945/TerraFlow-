@@ -1,0 +1,10 @@
+on_http_request:
+  - expressions:
+      - "req.method != 'GET' && req.method != 'HEAD' && req.method != 'OPTIONS' && !(req.method == 'POST' && (req.url.path == '/api/sensors/ingest' || req.url.path == '/api/sensors/gateway/heartbeat'))"
+    actions:
+      - type: "custom-response"
+        config:
+          status_code: 403
+          headers:
+            content-type: text/plain
+          body: "Public access is read-only except sensor ingest and heartbeat"
