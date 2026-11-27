@@ -6,6 +6,7 @@ import {
   SystemStatus, HumidityThresholds,
 } from '../services/api'
 import { HumidityChart } from '../components/charts/HumidityChart'
+import { MoistureScale } from '../components/dashboard/MoistureScale'
 import { ZoneCard } from '../components/dashboard/ZoneCard'
 import { Sliders, Leaf } from 'lucide-react'
 
@@ -26,7 +27,11 @@ export const Zones: React.FC = () => {
   const { data: thresholds, refetch: refetchThresholds } = usePolling<HumidityThresholds[]>(thresholdsFetcher, 60000)
   const { data: profiles } = usePolling(profilesFetcher, 300000)
 
-  const selectedThreshold = thresholds?.find(t => t.zone_id === selectedZone)
+  const zones = Array.isArray(status?.zones) ? status.zones : []
+  const valves = Array.isArray(status?.valves) ? status.valves : []
+  const selectedThreshold = Array.isArray(thresholds)
+    ? thresholds.find(t => t.zone_id === selectedZone)
+    : undefined
   const availablePhases = selectedCrop && profiles?.[selectedCrop] ? Object.keys(profiles[selectedCrop]) : []
 
   const handleToggleValve = async (valve_id: string, action: 'open' | 'close') => {
@@ -66,8 +71,8 @@ export const Zones: React.FC = () => {
       </h1>
 
       <div className="grid gap-6" style={{ gridTemplateColumns: '1fr 1fr 1fr 1fr' }}>
-        {status?.zones.map(zone => {
-          const valve = status.valves.find(v => v.valve_id === zone.sensor_id.replace('sensor_', ''))
+        {zones.map(zone => {
+          const valve = valves.find(v => v.valve_id === zone.sensor_id.replace('sensor_', ''))
           return (
             <div
               key={zone.sensor_id}
@@ -92,10 +97,12 @@ export const Zones: React.FC = () => {
           <HumidityChart
             history={history}
             thresholds={selectedThreshold}
-            zoneName={status?.zones.find(z => z.sensor_id === `sensor_${selectedZone}`)?.zone_name}
+            zoneName={zones.find(z => z.sensor_id === `sensor_${selectedZone}`)?.zone_name}
           />
         </div>
       )}
+
+      {selectedThreshold && <MoistureScale threshold={selectedThreshold} onApplied={refetchThresholds} />}
 
       {/* Phenology profile selector */}
       {selectedThreshold && (

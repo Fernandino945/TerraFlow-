@@ -104,6 +104,7 @@ class HumidityThresholds(BaseModel):
     warning_low: float = 35.0
     warning_high: float = 75.0
     critical_high: float = 85.0
+    moisture_level: int | None = None  # 1-5 si los umbrales coinciden con la escala; se calcula en el servidor
 
 class MonthlyReport(BaseModel):
     month: str

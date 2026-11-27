@@ -1,9 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import sensors, valves, weather, reports, alerts, location, database as database_api
+from app.api import sensors, valves, irrigation, weather, reports, alerts, location, database as database_api
 from app.core.config import settings
 from app.core.scheduler import start_scheduler
 from app.core import database as db, state
+from app.services import irrigation_schedule
 from app.api import analytics
 
 app = FastAPI(
@@ -27,6 +28,7 @@ app.include_router(reports.router, prefix="/api/reports", tags=["Reportes"])
 app.include_router(alerts.router, prefix="/api/alerts", tags=["Alertas"])
 app.include_router(location.router, prefix="/api/location", tags=["Ubicación"])
 app.include_router(database_api.router, prefix="/api/database", tags=["Base de Datos"])
+app.include_router(irrigation.router, prefix="/api/irrigation", tags=["Riego"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Análisis"])
 
 @app.on_event("startup")
@@ -40,6 +42,14 @@ async def startup_event():
         settings.LATITUDE = saved_location["latitude"]
         settings.LONGITUDE = saved_location["longitude"]
         settings.LOCATION_NAME = saved_location["location_name"]
+
+    saved_schedule = await db.get_irrigation_schedule()
+    if saved_schedule:
+        irrigation_schedule.set_schedule(
+            bool(saved_schedule.get("enabled", False)),
+            saved_schedule.get("start", settings.IRRIGATION_WINDOW_START),
+            saved_schedule.get("end", settings.IRRIGATION_WINDOW_END),
+        )
 
     start_scheduler()
 

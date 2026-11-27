@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Sidebar } from './components/dashboard/Sidebar'
 import { Dashboard } from './pages/Dashboard'
@@ -7,12 +7,16 @@ import { Weather } from './pages/Weather'
 import { Reports } from './pages/Reports'
 import { Settings } from './pages/Settings'
 import { DatabaseExplorer } from './pages/DatabaseExplorer'
+import { TerraFlowContext, ConnectionState } from './context/TerraFlowContext'
 
 export default function App() {
+  const [connection, setConnection] = useState<ConnectionState>('loading')
+  const [refreshVersion, setRefreshVersion] = useState(0)
   return (
-    <BrowserRouter>
-      <div className="flex" style={{ minHeight: '100vh' }}>
-        <Sidebar />
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <TerraFlowContext.Provider value={{ connection, setConnection, refreshVersion }}>
+      <div className="tf-app">
+        <Sidebar connection={connection} onRefresh={() => setRefreshVersion(value => value + 1)} />
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/zones" element={<Zones />} />
@@ -22,6 +26,7 @@ export default function App() {
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </div>
+      </TerraFlowContext.Provider>
     </BrowserRouter>
   )
 }

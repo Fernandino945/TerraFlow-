@@ -10,3 +10,4 @@ pymongo==4.7.2
 pytest==8.2.2
 pytest-cov==5.0.0
 ruff==0.4.9
+tzdata==2024.1

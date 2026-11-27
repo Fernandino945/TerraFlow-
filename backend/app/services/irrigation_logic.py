@@ -8,8 +8,11 @@ from datetime import datetime
 from app.core import state
 from app.models.schemas import ValveStatus, AlertLevel
 from app.core.config import settings
+from app.services import irrigation_schedule
 
 _last_weather: dict = {}
+# Zonas con aviso de 'fuera de horario' ya emitido (evita repetir la alerta cada 30 s)
+_window_alerted: set = set()
 
 
 def set_weather_context(suspended: bool, reason: str = ""):
@@ -64,6 +67,26 @@ def evaluate_auto_irrigation():
         if reading.temperature < settings.SOIL_FROST_TEMP_THRESHOLD:
            state.add_alert(AlertLevel.CRITICAL, f"Riesgo de helada en {reading.zone_name} ({reading.temperature}°C) — "f"Acción recomendada: evaluar riego manual o protección anti-helada", zone=reading.zone_name,
     )
+
+        # Ventana horaria: fuera de horario el modo automático no riega
+        if not irrigation_schedule.is_irrigation_allowed_now():
+            if valve.status == ValveStatus.OPEN:
+                _close_valve(
+                    valve,
+                    f"Fuera del horario de riego — riego detenido en {reading.zone_name}",
+                    AlertLevel.INFO,
+                    zone=reading.zone_name,
+                )
+            if reading.humidity < th.critical_low and zone_id not in _window_alerted:
+                _window_alerted.add(zone_id)
+                state.add_alert(
+                    AlertLevel.WARNING,
+                    f"Humedad crítica en {reading.zone_name} ({reading.humidity}%) fuera del horario de riego — "
+                    "Acción recomendada: evaluar riego manual",
+                    zone=reading.zone_name,
+                )
+            continue
+        _window_alerted.discard(zone_id)
 
         # Lógica de lazo cerrado por humedad
         if reading.humidity < th.critical_low:

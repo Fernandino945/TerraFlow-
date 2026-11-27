@@ -39,6 +39,9 @@ def alerts_collection():
 def user_location_collection():
     return db["user_location"]
 
+def irrigation_schedule_collection():
+    return db["irrigation_schedule"]
+
 def system_events_collection():
     return db["system_events"]  # watchdog / failsafe / caídas
 
@@ -120,6 +123,16 @@ async def get_user_location():
     return await user_location_collection().find_one({"_id": "active_location"})
 
 
+# ---------- Ventana horaria de riego ----------
+async def save_irrigation_schedule(schedule: dict):
+    await irrigation_schedule_collection().update_one(
+        {"_id": "active_schedule"}, {"$set": {**schedule, "_id": "active_schedule"}}, upsert=True
+    )
+
+async def get_irrigation_schedule():
+    return await irrigation_schedule_collection().find_one({"_id": "active_schedule"})
+
+
 # ---------- Eventos del sistema (caídas, failsafe, watchdog) ----------
 async def log_system_event(event_type: str, detail: str):
     await system_events_collection().insert_one({
@@ -147,7 +160,7 @@ async def get_irrigation_events(start: datetime, end: datetime):
 # ---------- Explorador genérico (visor visual de la base de datos) ----------
 KNOWN_COLLECTIONS = [
     "sensor_history", "valve_states", "thresholds",
-    "alerts", "user_location", "system_events", "irrigation_events",
+    "alerts", "user_location", "system_events", "irrigation_events", "irrigation_schedule",
 ]
 
 async def list_collections_with_counts():
